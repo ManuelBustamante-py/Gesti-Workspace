@@ -19,6 +19,21 @@ function parseDate(value: string) {
   return new Date(year, month - 1, day)
 }
 
+function startOfWeek(value: Date) {
+  const date = new Date(value)
+  const day = date.getDay()
+  const daysFromMonday = day === 0 ? 6 : day - 1
+  date.setDate(date.getDate() - daysFromMonday)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function endOfWeek(value: Date) {
+  const date = startOfWeek(value)
+  date.setDate(date.getDate() + 6)
+  return date
+}
+
 function progressForColumn(columnName: string) {
   const name = columnName.toLowerCase()
   if (name.includes('complet') || name.includes('termin') || name.includes('hech')) {
@@ -97,23 +112,23 @@ function BoardGantt() {
 
   const timeline = useMemo(() => {
     if (tasks.length === 0) {
-      return { start: null, end: null, days: [] as Date[] }
+      return { start: null, end: null, weeks: [] as Date[] }
     }
-    const start = new Date(
+    const start = startOfWeek(new Date(
       Math.min(...tasks.map((task) => parseDate(task.start_date as string).getTime())),
-    )
-    const end = new Date(
+    ))
+    const end = endOfWeek(new Date(
       Math.max(...tasks.map((task) => parseDate(task.end_date as string).getTime())),
-    )
-    const days = Array.from(
-      { length: Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1 },
+    ))
+    const weeks = Array.from(
+      { length: Math.round((end.getTime() - start.getTime()) / (DAY_MS * 7)) + 1 },
       (_, index) => {
-        const day = new Date(start)
-        day.setDate(day.getDate() + index)
-        return day
+        const week = new Date(start)
+        week.setDate(week.getDate() + index * 7)
+        return week
       },
     )
-    return { start, end, days }
+    return { start, end, weeks }
   }, [tasks])
 
   if (loading) {
@@ -132,7 +147,7 @@ function BoardGantt() {
   }
 
   const labelWidth = 280
-  const dayWidth = 42
+  const weekWidth = 120
   const rowHeight = 72
   const orderedTasks = [...tasks].sort((left, right) => {
     const startDifference =
@@ -143,7 +158,7 @@ function BoardGantt() {
   })
   const todayOffset =
     timeline.start && timeline.end
-      ? (Date.now() - timeline.start.getTime()) / DAY_MS
+      ? (Date.now() - timeline.start.getTime()) / (DAY_MS * 7)
       : -1
 
   return (
@@ -184,7 +199,7 @@ function BoardGantt() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <div style={{ minWidth: labelWidth + timeline.days.length * dayWidth }}>
+              <div style={{ minWidth: labelWidth + timeline.weeks.length * weekWidth }}>
                 <div
                   className="grid border-b border-white/10 bg-white/[0.03]"
                   style={{ gridTemplateColumns: `${labelWidth}px 1fr` }}
@@ -194,11 +209,16 @@ function BoardGantt() {
                   </div>
                   <div
                     className="grid"
-                    style={{ gridTemplateColumns: `repeat(${timeline.days.length}, ${dayWidth}px)` }}
+                    style={{ gridTemplateColumns: `repeat(${timeline.weeks.length}, ${weekWidth}px)` }}
                   >
-                    {timeline.days.map((day) => (
-                      <div key={day.toISOString()} className="border-l border-white/5 px-1 py-3 text-center text-[10px] text-slate-400">
-                        {day.getDate()}
+                    {timeline.weeks.map((week, index) => (
+                      <div key={week.toISOString()} className="border-l border-white/5 px-2 py-3 text-center text-[10px] text-slate-400">
+                        <span className="block font-semibold text-slate-300">
+                          {week.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className="mt-1 block text-[9px] text-slate-500">
+                          Semana {index + 1}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -208,7 +228,7 @@ function BoardGantt() {
                   <svg
                     aria-hidden="true"
                     className="pointer-events-none absolute top-0 z-20"
-                    width={timeline.days.length * dayWidth}
+                    width={timeline.weeks.length * weekWidth}
                     height={orderedTasks.length * rowHeight}
                     style={{ left: labelWidth }}
                   >
@@ -218,15 +238,14 @@ function BoardGantt() {
                       const taskEnd = parseDate(task.end_date as string)
                       const nextStart = parseDate(nextTask.start_date as string)
                       const taskOffset = Math.round(
-                        (taskStart.getTime() - (timeline.start as Date).getTime()) / DAY_MS,
+                        (taskStart.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7),
                       )
                       const taskDuration =
-                        Math.round((taskEnd.getTime() - taskStart.getTime()) / DAY_MS) + 1
-                      const nextOffset = Math.round(
-                        (nextStart.getTime() - (timeline.start as Date).getTime()) / DAY_MS,
-                      )
-                      const startX = taskOffset * dayWidth + taskDuration * dayWidth - 3
-                      const endX = nextOffset * dayWidth + 3
+                        (taskEnd.getTime() - taskStart.getTime()) / (DAY_MS * 7) + 1 / 7
+                      const nextOffset =
+                        (nextStart.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7)
+                      const startX = taskOffset * weekWidth + taskDuration * weekWidth - 3
+                      const endX = nextOffset * weekWidth + 3
                       const startY = index * rowHeight + rowHeight / 2
                       const endY = (index + 1) * rowHeight + rowHeight / 2
                       const bendX = Math.max(startX + 12, endX - 12)
@@ -246,11 +265,11 @@ function BoardGantt() {
                     })}
                   </svg>
 
-                  {todayOffset >= 0 && todayOffset <= timeline.days.length - 1 && (
+                  {todayOffset >= 0 && todayOffset <= timeline.weeks.length && (
                     <div
                       className="pointer-events-none absolute inset-y-0 z-30 w-0.5 bg-lime-300"
                       style={{
-                        left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
+                        left: labelWidth + todayOffset * weekWidth,
                       }}
                     >
                       <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-lime-300 px-2 py-1 text-[10px] font-semibold text-slate-950">
@@ -262,8 +281,8 @@ function BoardGantt() {
                 {orderedTasks.map((task) => {
                   const start = parseDate(task.start_date as string)
                   const end = parseDate(task.end_date as string)
-                  const offset = Math.round((start.getTime() - (timeline.start as Date).getTime()) / DAY_MS)
-                  const duration = Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1
+                  const offset = (start.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7)
+                  const duration = (end.getTime() - start.getTime()) / (DAY_MS * 7) + 1 / 7
                   const barColor = task.critical ? 'bg-rose-400' : task.progress === 100 ? 'bg-emerald-400' : 'bg-slate-500'
                   const progressWidth = Math.max(0, Math.min(100, task.progress))
 
@@ -281,16 +300,16 @@ function BoardGantt() {
                       </div>
                       <div
                         className="relative grid items-center"
-                        style={{ gridTemplateColumns: `repeat(${timeline.days.length}, ${dayWidth}px)` }}
+                        style={{ gridTemplateColumns: `repeat(${timeline.weeks.length}, ${weekWidth}px)` }}
                       >
-                        {timeline.days.map((day) => (
-                          <span key={day.toISOString()} className="h-full border-l border-white/5" />
+                        {timeline.weeks.map((week) => (
+                          <span key={week.toISOString()} className="h-full border-l border-white/5" />
                         ))}
                         <div
                           className={`absolute z-10 h-8 overflow-hidden rounded-md border ${task.critical ? 'border-rose-300/80' : 'border-white/20'} ${barColor}`}
                           style={{
-                            left: offset * dayWidth + 3,
-                            width: Math.max(duration * dayWidth - 6, 18),
+                            left: offset * weekWidth + 3,
+                            width: Math.max(duration * weekWidth - 6, 18),
                           }}
                           title={`${task.start_date} → ${task.end_date}`}
                         >
