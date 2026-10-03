@@ -46,6 +46,21 @@ export async function login(
   return data
 }
 
+export async function requestPasswordReset(email: string) {
+  const redirectUrl = new URL(
+    `${import.meta.env.BASE_URL}reset-password`,
+    window.location.origin,
+  ).toString()
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email.trim().toLowerCase(),
+    { redirectTo: redirectUrl },
+  )
+
+  if (error) {
+    throw error
+  }
+}
+
 export async function logout() {
   const { error } = await supabase.auth.signOut()
 

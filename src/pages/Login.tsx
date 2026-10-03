@@ -85,6 +85,12 @@ function Login() {
             />
           </div>
 
+          <div className="text-right">
+            <Link to="/forgot-password" className="text-sm text-[var(--accent-ui)] hover:text-[var(--text-main)]">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
+
           {error && (
             <div className="alert-error rounded-lg p-3 text-sm">
               {error}
