@@ -83,7 +83,6 @@ function Register() {
               onChange={(event) => setFirstName(event.target.value)}
               required
               className="theme-input w-full rounded-lg px-4 py-3"
-              placeholder="Manuel"
             />
           </div>
 
@@ -98,7 +97,6 @@ function Register() {
               onChange={(event) => setLastName(event.target.value)}
               required
               className="theme-input w-full rounded-lg px-4 py-3"
-              placeholder="Bustamante"
             />
           </div>
 
@@ -113,7 +111,6 @@ function Register() {
               onChange={(event) => setEmail(event.target.value)}
               required
               className="theme-input w-full rounded-lg px-4 py-3"
-              placeholder="tu@email.com"
             />
           </div>
 

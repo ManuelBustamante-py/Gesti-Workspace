@@ -62,7 +62,6 @@ function Login() {
               onChange={(event) => setEmail(event.target.value)}
               required
               className="theme-input w-full rounded-lg px-4 py-3"
-              placeholder="tu@email.com"
             />
           </div>
 
@@ -81,12 +80,11 @@ function Login() {
               onChange={(event) => setPassword(event.target.value)}
               required
               className="theme-input w-full rounded-lg px-4 py-3"
-              placeholder="••••••••"
             />
           </div>
 
           <div className="text-right">
-            <Link to="/forgot-password" className="text-sm text-[var(--accent-ui)] hover:text-[var(--text-main)]">
+            <Link to="/forgot-password" className="auth-link-recovery text-sm">
               ¿Olvidaste tu contraseña?
             </Link>
           </div>
@@ -110,7 +108,7 @@ function Login() {
           ¿No tienes una cuenta?{' '}
           <Link
             to="/register"
-            className="font-medium text-[var(--accent-mint)] hover:text-[var(--text-main)]"
+            className="auth-link-register font-medium"
           >
             Crear cuenta
           </Link>
