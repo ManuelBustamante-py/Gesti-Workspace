@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 import { useAuth } from '../context/AuthContext'
 import {
@@ -127,6 +128,81 @@ function Dashboard() {
   }, [selectedBoardId])
 
   useEffect(() => {
+    if (!selectedBoardId || !user) {
+      return
+    }
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+    const refreshBoard = () => {
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer)
+      }
+
+      refreshTimer = window.setTimeout(async () => {
+        try {
+          const [columns, members, invitations] = await Promise.all([
+            ensureBoardColumns(selectedBoardId),
+            getBoardMembers(selectedBoardId),
+            getBoardInvitations(selectedBoardId),
+          ])
+          const taskEntries = await Promise.all(
+            columns.map(async (column) => ({
+              columnId: column.id,
+              tasks: await getColumnTasks(column.id),
+            })),
+          )
+          setBoardsColumns(columns)
+          setTasksByColumn(
+            Object.fromEntries(
+              taskEntries.map(({ columnId, tasks }) => [columnId, tasks]),
+            ),
+          )
+          setBoardMembers(members)
+          setBoardInvitations(invitations)
+          setReceivedInvitations(await getReceivedBoardInvitations())
+        } catch (err) {
+          console.error('Error al sincronizar el tablero en tiempo real:', err)
+        }
+      }, 120)
+    }
+
+    const channel = supabase
+      .channel(`board-live-${selectedBoardId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${selectedBoardId}` },
+        refreshBoard,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'board_invitations', filter: `board_id=eq.${selectedBoardId}` },
+        refreshBoard,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'board_columns', filter: `board_id=eq.${selectedBoardId}` },
+        refreshBoard,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        refreshBoard,
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('No se pudo conectar al canal Realtime del tablero.')
+        }
+      })
+
+    return () => {
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer)
+      }
+      void supabase.removeChannel(channel)
+    }
+  }, [selectedBoardId, user])
+
+  useEffect(() => {
     async function loadBoards() {
       try {
         setError('')
@@ -175,6 +251,56 @@ function Dashboard() {
     }
 
     loadReceivedInvitations()
+  }, [user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    const channel = supabase
+      .channel(`received-invitations-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'board_invitations',
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        async () => {
+          try {
+            setReceivedInvitations(await getReceivedBoardInvitations())
+          } catch (err) {
+            console.error('Error al actualizar solicitudes en tiempo real:', err)
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'board_members',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async () => {
+          try {
+            setBoards(await getBoards())
+          } catch (err) {
+            console.error('Error al actualizar tableros compartidos en tiempo real:', err)
+          }
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('No se pudo conectar al canal Realtime de solicitudes.')
+        }
+      })
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
   }, [user])
 
   useEffect(() => {
@@ -341,6 +467,14 @@ function Dashboard() {
       setReceivedInvitations((current) =>
         current.filter((invitation) => invitation.id !== invitationId),
       )
+      if (selectedBoardId) {
+        const [members, invitations] = await Promise.all([
+          getBoardMembers(selectedBoardId),
+          getBoardInvitations(selectedBoardId),
+        ])
+        setBoardMembers(members)
+        setBoardInvitations(invitations)
+      }
     } catch (err) {
       console.error('Error al responder solicitud de colaboración:', err)
       setError(
@@ -374,6 +508,8 @@ function Dashboard() {
         ),
         member,
       ])
+      const members = await getBoardMembers(selectedBoardId)
+      setBoardMembers(members)
       setMemberEmail('')
     } catch (err) {
       console.error('Error al invitar colaborador:', err)
@@ -1368,7 +1504,9 @@ function Dashboard() {
                           Invitaciones pendientes
                         </p>
                         <div className="space-y-2">
-                          {boardInvitations.map((invitation) => (
+                          {boardInvitations
+                            .filter((invitation) => invitation.status === 'pending')
+                            .map((invitation) => (
                             <div
                               key={invitation.id}
                               className="flex items-center justify-between rounded-lg border border-white/5 bg-black/20 px-3 py-2"
@@ -1997,7 +2135,9 @@ function Dashboard() {
                         Invitaciones pendientes · {boardInvitations.filter((invitation) => invitation.status === 'pending').length}
                       </p>
                       <div className="divide-y divide-white/10">
-                        {boardInvitations.map((invitation) => (
+                        {boardInvitations
+                          .filter((invitation) => invitation.status === 'pending')
+                          .map((invitation) => (
                           <div key={invitation.id} className="flex flex-wrap items-center gap-3 py-4">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300">✉</div>
                             <div className="min-w-0 flex-1">

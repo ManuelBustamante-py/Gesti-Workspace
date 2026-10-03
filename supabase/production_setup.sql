@@ -316,6 +316,7 @@ grant execute on function public.accept_board_invitation(uuid) to authenticated;
 revoke all on function public.decline_board_invitation(uuid) from public;
 grant execute on function public.decline_board_invitation(uuid) to authenticated;
 
+
 create or replace function public.user_can_access_board(target_board_id uuid)
 returns boolean
 language sql stable security definer
@@ -406,5 +407,33 @@ set
     nullif(trim(substr(display_name, length(split_part(display_name, ' ', 1)) + 1)), '')
   )
 where first_name is null or last_name is null;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.board_members;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.board_invitations;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.board_columns;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.tasks;
+exception when duplicate_object then null;
+end;
+$$;
 
 commit;
