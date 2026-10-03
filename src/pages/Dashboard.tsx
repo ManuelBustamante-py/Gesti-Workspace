@@ -145,7 +145,7 @@ function Dashboard() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [importingBoard, setImportingBoard] = useState(false)
   const [boardViewMinimized, setBoardViewMinimized] = useState(false)
-  const [ganttViewOpen, setGanttViewOpen] = useState(false)
+  const ganttViewOpen = false
 
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
   const [editForm, setEditForm] = useState<BoardFormState>(defaultBoardForm)
@@ -1516,18 +1516,12 @@ function Dashboard() {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setGanttViewOpen((isOpen) => !isOpen)}
-                        className={`text-sm font-medium transition ${
-                          ganttViewOpen
-                            ? 'text-[var(--accent-mint)]'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                        aria-expanded={ganttViewOpen}
+                      <Link
+                        to={`/dashboard/gantt/${selectedBoard.id}`}
+                        className="text-sm font-medium text-slate-300 transition hover:text-white"
                       >
-                        {ganttViewOpen ? 'Ocultar diagrama Gantt' : 'Diagrama Gantt'}
-                      </button>
+                        Diagrama Gantt
+                      </Link>
                       <button
                         type="button"
                         onClick={handleToggleBoardView}

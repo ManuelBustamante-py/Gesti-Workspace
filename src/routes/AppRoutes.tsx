@@ -8,6 +8,7 @@ import ProtectedRoute from './ProtectedRoute'
 import Profile from '../pages/Profile'
 import ForgotPassword from '../pages/ForgotPassword'
 import ResetPassword from '../pages/ResetPassword'
+import BoardGantt from '../pages/BoardGantt'
 
 function AppRoutes() {
   return (
@@ -20,6 +21,7 @@ function AppRoutes() {
 
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/gantt/:boardId" element={<BoardGantt />} />
           <Route path="/profile" element={<Profile />} />
         </Route>
 
