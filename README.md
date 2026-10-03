@@ -1,78 +1,157 @@
-# Kanban Workspace
+# Gesti - Workspace
 
-Aplicación Kanban construida con React, TypeScript, Vite y Supabase.
+## Organiza el trabajo. Visualiza el progreso. Avanza en equipo.
 
-## Desarrollo local
+**Gesti - Workspace** es una plataforma de gestión visual de proyectos basada
+en tableros Kanban. Está pensada para transformar ideas, pendientes y
+responsabilidades en un flujo de trabajo claro, ordenado y fácil de seguir.
 
-1. Instala dependencias:
+Desde cualquier dispositivo puedes crear tus tableros, organizar tareas por
+etapas, compartir proyectos y mantener una visión actualizada de lo que está
+pendiente, en progreso o terminado.
 
-   ```bash
-   npm ci
-   ```
+## Funcionalidades
 
-2. Crea `.env.local` a partir de `.env.example`:
+### Tableros para cada proyecto
 
-   ```env
-   VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
-   VITE_SUPABASE_PUBLISHABLE_KEY=tu-clave-publicable
-   ```
+- Crea tantos tableros como necesites.
+- Personaliza el nombre, la descripción y el color de cada tablero.
+- Mantén tus proyectos separados y organizados.
+- Accede rápidamente a tus tableros desde un espacio de trabajo centralizado.
 
-   Solo se debe usar la clave publicable de Supabase en el frontend. Nunca
-   agregues claves `service_role` ni secretos privados a variables `VITE_*`.
+### Flujo Kanban flexible
 
-3. Ejecuta la aplicación:
+- Organiza el trabajo en columnas como **Por hacer**, **En progreso** y
+  **Completado**.
+- Crea columnas personalizadas para adaptar el flujo a tu forma de trabajar.
+- Edita o elimina columnas cuando el proyecto cambie.
+- Visualiza el avance de un proyecto de manera simple y directa.
 
-   ```bash
-   npm run dev
-   ```
+### Gestión de tareas
 
-## Supabase
+- Crea tareas dentro de cada columna.
+- Añade títulos, descripciones, prioridades y fechas de vencimiento.
+- Marca visualmente las prioridades baja, media y alta.
+- Edita, elimina y mueve tareas entre las distintas etapas del tablero.
+- Identifica rápidamente qué requiere atención.
 
-Para una configuración inicial rápida, ejecuta una sola vez
-`supabase/production_setup.sql` en el SQL Editor de Supabase. Este script
-consolida las migraciones de columnas, tareas, prioridades, colaboradores,
-invitaciones y nombres de perfil. Es idempotente para poder reintentarlo si
-Supabase informa un error de conexión.
+### Colaboración
 
-Como alternativa para equipos que usan Supabase CLI, ejecuta las migraciones
-de `supabase/migrations/` en orden, pero no ejecutes ambas opciones como parte
-del mismo proceso inicial.
+- Invita personas a tus tableros mediante su correo electrónico.
+- Define el nivel de acceso como **Lector** o **Editor**.
+- Consulta los colaboradores asociados a cada proyecto.
+- Mantén cada tablero enfocado en las personas que realmente participan.
 
-Luego, en Authentication > URL Configuration, agrega:
+### Importación y exportación
 
-- URL del sitio: `https://<usuario>.github.io/<repositorio>/`
-- Redirect URL: `https://<usuario>.github.io/<repositorio>/`
+- Descarga una plantilla de trabajo en formato XLS.
+- Importa tableros, columnas y tareas desde una planilla.
+- Exporta tus proyectos para compartirlos, respaldarlos o analizarlos.
+- Conserva prioridades, fechas y estados al trabajar con tus datos.
 
-Para desarrollo local agrega también:
+### Cuenta y seguridad
 
-- `http://localhost:5173/`
+- Regístrate con tu nombre, apellido, correo y contraseña.
+- Inicia sesión de forma segura.
+- Recupera el acceso mediante el enlace **¿Olvidaste tu contraseña?**
+- Cambia tu contraseña desde tu perfil.
+- Administra tu avatar y consulta tu información personal.
+- Usa la plataforma desde computadores, tablets y teléfonos.
 
-Las políticas RLS deben permanecer activas. El frontend no contiene permisos
-administrativos y las claves privadas no deben exponerse.
+## Cómo comenzar a utilizar Gesti - Workspace
 
-## GitHub Pages
+### 1. Ingresa al sitio web
 
-El workflow [deploy-pages.yml](./.github/workflows/deploy-pages.yml) construye
-y publica automáticamente cada push a `master` o `main`.
+Accede a:
 
-En el repositorio, configura estos **Actions secrets**:
+**[Abrir Gesti - Workspace](https://manuelbustamante-py.github.io/Gesti-Workspace/)**
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
+La plataforma funciona directamente desde el navegador. No necesitas instalar
+programas ni descargar archivos para comenzar.
 
-Después, en Settings > Pages, selecciona **GitHub Actions** como fuente de
-despliegue. La aplicación quedará disponible en:
+### 2. Crea tu cuenta
+
+En la pantalla de inicio selecciona **Crear cuenta** y completa:
+
+- Nombre.
+- Apellido.
+- Correo electrónico.
+- Contraseña.
+- Confirmación de contraseña.
+
+Después de registrarte, inicia sesión con tus credenciales.
+
+### 3. Crea tu primer tablero
+
+Desde **Crear tablero**:
+
+1. Escribe un nombre para tu proyecto.
+2. Añade una descripción breve.
+3. Selecciona un color para identificarlo.
+4. Guarda el tablero.
+
+Puedes crear un tablero para un proyecto personal, un equipo, una planificación
+semanal, un proceso académico o cualquier flujo de trabajo que quieras
+visualizar.
+
+### 4. Organiza el trabajo
+
+Abre un tablero y utiliza las columnas para representar las etapas de tu
+proceso. En cada columna puedes:
+
+1. Crear una tarea.
+2. Añadir su prioridad.
+3. Definir una fecha de vencimiento.
+4. Editar su información cuando sea necesario.
+5. Moverla a otra columna a medida que avance.
+
+Una estructura inicial recomendada es:
 
 ```text
-https://<usuario>.github.io/<repositorio>/
+Por hacer → En progreso → Completado
 ```
 
-El build usa la ruta del repositorio automáticamente y publica `404.html`
-para que las rutas de React Router sigan funcionando al recargar una página.
+### 5. Invita a tus colaboradores
 
-## Validación
+Dentro del tablero encontrarás la sección **Colaboradores**. Escribe el correo
+de la persona que quieres invitar y selecciona su nivel de acceso:
 
-```bash
-npm run lint
-npm run build
-```
+- **Lector**: puede consultar el tablero.
+- **Editor**: puede participar en la gestión del tablero.
+
+### 6. Importa o exporta información
+
+Si ya tienes tareas en una planilla, descarga la plantilla XLS de Gesti -
+Workspace, complétala y utiliza la opción de importación para crear un tablero
+con sus columnas y tareas.
+
+También puedes exportar un tablero en cualquier momento para conservar una copia
+o trabajar con la información fuera de la plataforma.
+
+### 7. Administra tu perfil
+
+Desde tu avatar puedes acceder a **Mi perfil** para:
+
+- Consultar tus datos de cuenta.
+- Actualizar tu avatar.
+- Cambiar tu contraseña.
+- Cerrar sesión de forma segura.
+
+Si no recuerdas tu contraseña, utiliza **¿Olvidaste tu contraseña?** en la
+pantalla de inicio de sesión y sigue el enlace que recibirás en tu correo.
+
+## Diseñado para trabajar desde cualquier lugar
+
+Gesti - Workspace se adapta a pantallas grandes y dispositivos móviles. En
+teléfonos puedes abrir el menú lateral y deslizar horizontalmente las columnas
+del tablero Kanban para revisar cada etapa sin perder información.
+
+## Privacidad y seguridad
+
+Tus tableros y datos están protegidos mediante autenticación y políticas de
+acceso. No compartas tus credenciales y utiliza siempre la dirección oficial
+del sitio para iniciar sesión.
+
+¿Listo para organizar tu próximo proyecto?
+
+**[Comienza a utilizar Gesti - Workspace](https://manuelbustamante-py.github.io/Gesti-Workspace/)**
