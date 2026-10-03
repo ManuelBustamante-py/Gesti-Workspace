@@ -59,7 +59,7 @@ export function exportBoardProjectXml(
   )
   const projectTasks = scheduledTasks.map(
     ({ task, column, start, finish, durationDays, status }, index) =>
-      `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Manual>1</Manual><Type>1</Type><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>P${durationDays}D</Duration><DurationFormat>8</DurationFormat><ConstraintType>4</ConstraintType><ConstraintDate>${isoDate(start, fallbackDate)}</ConstraintDate><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1></Task>`,
+      `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Manual>1</Manual><Type>1</Type><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><ConstraintType>4</ConstraintType><ConstraintDate>${isoDate(start, fallbackDate)}</ConstraintDate><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1></Task>`,
   ).join('')
 
   const content = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
