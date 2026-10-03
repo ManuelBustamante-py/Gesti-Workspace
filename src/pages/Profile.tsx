@@ -69,12 +69,7 @@ function Profile() {
       setSaving(true)
       setError('')
       setMessage('')
-      const data = await updateProfile(
-        user.id,
-        firstName,
-        lastName,
-        avatarUrl,
-      )
+      const data = await updateProfile(user.id, avatarUrl)
       setProfile(data)
       setMessage('Perfil actualizado correctamente.')
     } catch (err) {
@@ -152,8 +147,8 @@ function Profile() {
             <>
               <section className="mt-8 space-y-4">
                 <h2 className="text-lg font-semibold">Información personal</h2>
-                <input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Nombre" className="theme-input w-full rounded-lg px-4 py-3" />
-                <input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Apellido" className="theme-input w-full rounded-lg px-4 py-3" />
+                <input value={firstName} readOnly aria-readonly="true" placeholder="Nombre" className="theme-input w-full rounded-lg px-4 py-3 opacity-70" />
+                <input value={lastName} readOnly aria-readonly="true" placeholder="Apellido" className="theme-input w-full rounded-lg px-4 py-3 opacity-70" />
                 <input value={user?.email ?? ''} readOnly aria-readonly="true" placeholder="Correo" className="theme-input w-full rounded-lg px-4 py-3 opacity-70" />
                 <input value={username} readOnly aria-readonly="true" placeholder="Nombre de usuario" className="theme-input w-full rounded-lg px-4 py-3 opacity-70" />
                 <input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} placeholder="URL de imagen de perfil (opcional)" className="theme-input w-full rounded-lg px-4 py-3" />

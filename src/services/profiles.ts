@@ -27,18 +27,11 @@ export async function getProfile(userId: string) {
 
 export async function updateProfile(
   userId: string,
-  firstName: string,
-  lastName: string,
   avatarUrl: string,
 ) {
-  const normalizedFirstName = firstName.trim()
-  const normalizedLastName = lastName.trim()
   const { data, error } = await supabase
     .from('profiles')
     .update({
-      first_name: normalizedFirstName || null,
-      last_name: normalizedLastName || null,
-      display_name: `${normalizedFirstName} ${normalizedLastName}`.trim() || null,
       avatar_url: avatarUrl.trim() || null,
       updated_at: new Date().toISOString(),
     })
