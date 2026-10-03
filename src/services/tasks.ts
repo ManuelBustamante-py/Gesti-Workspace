@@ -10,6 +10,7 @@ export interface Task {
   priority: TaskPriority
   start_date: string | null
   end_date: string | null
+  predecessor_ids: string[]
   position: number
   created_at: string
   updated_at: string
@@ -37,6 +38,7 @@ export async function createTask(
   priority: TaskPriority = 'medium',
   startDate?: string | null,
   endDate?: string | null,
+  predecessorIds: string[] = [],
 ) {
   const trimmedTitle = title.trim()
 
@@ -71,6 +73,7 @@ export async function createTask(
       priority,
       start_date: startDate || null,
       end_date: endDate || null,
+      predecessor_ids: predecessorIds,
       position,
     })
     .select()
@@ -90,6 +93,7 @@ export async function updateTask(
   priority: TaskPriority = 'medium',
   startDate?: string | null,
   endDate?: string | null,
+  predecessorIds: string[] = [],
 ) {
   const trimmedTitle = title.trim()
 
@@ -108,6 +112,7 @@ export async function updateTask(
       priority,
       start_date: startDate || null,
       end_date: endDate || null,
+      predecessor_ids: predecessorIds,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

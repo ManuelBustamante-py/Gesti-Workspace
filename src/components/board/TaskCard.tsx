@@ -10,6 +10,7 @@ export interface EditingTaskState {
   priority: TaskPriority
   startDate: string
   endDate: string
+  predecessorIds: string[]
 }
 
 interface TaskCardProps {
@@ -24,6 +25,7 @@ interface TaskCardProps {
   onCancelEdit: () => void
   onMove: (task: Task, columnId: string) => void
   onDelete: (task: Task) => void
+  availableTasks: Task[]
 }
 
 const priorityLabels: Record<TaskPriority, string> = {
@@ -44,6 +46,7 @@ function TaskCard({
   onCancelEdit,
   onMove,
   onDelete,
+  availableTasks,
 }: TaskCardProps) {
   const isEditing = editingTask?.id === task.id
 
@@ -89,6 +92,30 @@ function TaskCard({
             aria-label="Fecha de fin"
           />
         </div>
+        <label className="block text-xs text-[var(--text-muted)]">
+          Predecesoras (fin a inicio)
+          <select
+            multiple
+            value={editingTask.predecessorIds}
+            onChange={(event) =>
+              onEditChange({
+                predecessorIds: Array.from(
+                  event.target.selectedOptions,
+                  (option) => option.value,
+                ),
+              })
+            }
+            className="control-input mt-1 min-h-20 w-full rounded-lg px-2 py-2 text-sm"
+          >
+            {availableTasks
+              .filter((candidate) => candidate.id !== task.id)
+              .map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.title}
+                </option>
+              ))}
+          </select>
+        </label>
         <div className="flex gap-2">
           <button type="button" onClick={onSaveEdit} disabled={savingTask} className="btn-mint-primary px-3 py-2 text-xs">
             {savingTask ? 'Guardando...' : 'Guardar'}

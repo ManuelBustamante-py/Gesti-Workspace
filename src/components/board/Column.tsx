@@ -29,6 +29,7 @@ interface ColumnProps {
   onCancelTask: () => void
   onMoveTask: (task: Task, columnId: string) => void
   onDeleteTask: (task: Task) => void
+  availableTasks: Task[]
 }
 
 function Column({
@@ -56,6 +57,7 @@ function Column({
   onCancelTask,
   onMoveTask,
   onDeleteTask,
+  availableTasks,
 }: ColumnProps) {
   const normalizedName = column.name.toLowerCase()
   const statusClass = normalizedName.includes('complet') || normalizedName.includes('final')
@@ -145,6 +147,7 @@ function Column({
               onCancelEdit={onCancelTask}
               onMove={onMoveTask}
               onDelete={onDeleteTask}
+              availableTasks={availableTasks}
             />
           ))
         )}

@@ -131,6 +131,78 @@ function BoardGantt() {
     return { start, end, weeks }
   }, [tasks])
 
+  const criticalIds = useMemo(() => {
+    const scheduled = tasks.filter((task) => task.start_date && task.end_date)
+    const byId = new Map(scheduled.map((task) => [task.id, task]))
+    const duration = (task: GanttTask) =>
+      Math.max(
+        1,
+        Math.round(
+          (parseDate(task.end_date as string).getTime() -
+            parseDate(task.start_date as string).getTime()) /
+            DAY_MS,
+        ) + 1,
+      )
+    const earliestFinish = new Map<string, number>()
+    const visiting = new Set<string>()
+
+    function calculateEarliestFinish(task: GanttTask): number {
+      const cached = earliestFinish.get(task.id)
+      if (cached !== undefined) return cached
+      if (visiting.has(task.id)) return task.start_date ? parseDate(task.start_date).getTime() + duration(task) * DAY_MS : 0
+      visiting.add(task.id)
+      const predecessorFinish = (task.predecessor_ids ?? [])
+        .map((id) => byId.get(id))
+        .filter((item): item is GanttTask => Boolean(item))
+        .reduce(
+          (latest, predecessor) => Math.max(latest, calculateEarliestFinish(predecessor)),
+          0,
+        )
+      const ownStart = parseDate(task.start_date as string).getTime()
+      const finish = Math.max(ownStart, predecessorFinish) + duration(task) * DAY_MS
+      visiting.delete(task.id)
+      earliestFinish.set(task.id, finish)
+      return finish
+    }
+
+    const projectFinish = Math.max(
+      ...scheduled.map((task) => calculateEarliestFinish(task)),
+      0,
+    )
+    const latestStart = new Map<string, number>()
+    const successors = new Map<string, GanttTask[]>()
+    scheduled.forEach((task) => {
+      ;(task.predecessor_ids ?? []).forEach((predecessorId) => {
+        const predecessor = byId.get(predecessorId)
+        if (predecessor) {
+          successors.set(predecessorId, [
+            ...(successors.get(predecessorId) ?? []),
+            task,
+          ])
+        }
+      })
+    })
+    const critical = new Set<string>()
+    ;[...scheduled]
+      .sort(
+        (left, right) =>
+          parseDate(right.end_date as string).getTime() -
+          parseDate(left.end_date as string).getTime(),
+      )
+      .forEach((task) => {
+      const successorStarts = (successors.get(task.id) ?? []).map(
+        (successor) => latestStart.get(successor.id) ?? projectFinish,
+      )
+      const latestFinish = successorStarts.length
+        ? Math.min(...successorStarts)
+        : projectFinish
+      const slack = latestFinish - calculateEarliestFinish(task)
+      if (Math.abs(slack) <= DAY_MS) critical.add(task.id)
+      latestStart.set(task.id, latestFinish - duration(task) * DAY_MS)
+      })
+    return critical
+  }, [tasks])
+
   if (loading) {
     return <main className="min-h-screen bg-[var(--bg-main)] p-6 text-slate-400">Cargando diagrama Gantt...</main>
   }
@@ -146,7 +218,7 @@ function BoardGantt() {
     )
   }
 
-  const labelWidth = 280
+  const labelWidth = 360
   const weekWidth = 120
   const rowHeight = 72
   const orderedTasks = [...tasks].sort((left, right) => {
@@ -227,41 +299,66 @@ function BoardGantt() {
                 <div className="relative">
                   <svg
                     aria-hidden="true"
-                    className="pointer-events-none absolute top-0 z-20"
+                    className="pointer-events-none absolute top-0 z-50"
                     width={timeline.weeks.length * weekWidth}
                     height={orderedTasks.length * rowHeight}
                     style={{ left: labelWidth }}
                   >
-                    {orderedTasks.slice(0, -1).map((task, index) => {
-                      const nextTask = orderedTasks[index + 1]
-                      const taskStart = parseDate(task.start_date as string)
-                      const taskEnd = parseDate(task.end_date as string)
-                      const nextStart = parseDate(nextTask.start_date as string)
+                    {orderedTasks.flatMap((task, index) => {
+                      const successors = orderedTasks
+                        .map((candidate, candidateIndex) => ({
+                          task: candidate,
+                          index: candidateIndex,
+                        }))
+                        .filter(({ task: candidate }) =>
+                          (candidate.predecessor_ids ?? []).includes(task.id),
+                        )
+
                       const taskOffset = Math.round(
-                        (taskStart.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7),
+                        (parseDate(task.start_date as string).getTime() -
+                          (timeline.start as Date).getTime()) /
+                          (DAY_MS * 7),
                       )
                       const taskDuration =
-                        (taskEnd.getTime() - taskStart.getTime()) / (DAY_MS * 7) + 1 / 7
-                      const nextOffset =
-                        (nextStart.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7)
+                        (parseDate(task.end_date as string).getTime() -
+                          parseDate(task.start_date as string).getTime()) /
+                          (DAY_MS * 7) +
+                        1 / 7
                       const startX = taskOffset * weekWidth + taskDuration * weekWidth - 3
-                      const endX = nextOffset * weekWidth + 3
-                      const startY = index * rowHeight + rowHeight / 2
-                      const endY = (index + 1) * rowHeight + rowHeight / 2
-                      const bendX = Math.max(startX + 12, endX - 12)
-                      const critical = task.critical && nextTask.critical
+                      return successors.map(({ task: nextTask, index: nextIndex }) => {
+                        const nextOffset =
+                          (parseDate(nextTask.start_date as string).getTime() -
+                            (timeline.start as Date).getTime()) /
+                          (DAY_MS * 7)
+                        const endX = nextOffset * weekWidth + 3
+                        const startY = index * rowHeight + rowHeight / 2
+                        const endY = nextIndex * rowHeight + rowHeight / 2
+                        const bendX = Math.max(startX + 12, endX - 12)
+                        const critical =
+                          criticalIds.has(task.id) && criticalIds.has(nextTask.id)
+                        const path = `M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`
 
-                      return (
-                        <path
-                          key={`${task.id}-${nextTask.id}`}
-                          d={`M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`}
-                          fill="none"
-                          stroke={critical ? '#fb7185' : '#64748b'}
-                          strokeWidth={critical ? 2 : 1.5}
-                          strokeDasharray={critical ? undefined : '4 3'}
-                          opacity={critical ? 0.95 : 0.7}
-                        />
-                      )
+                        return (
+                          <g key={`${task.id}-${nextTask.id}`}>
+                            <path
+                              d={path}
+                              fill="none"
+                              stroke="#111827"
+                              strokeWidth={critical ? 5 : 4}
+                              strokeDasharray={critical ? undefined : '4 3'}
+                              opacity={0.95}
+                            />
+                            <path
+                              d={path}
+                              fill="none"
+                              stroke={critical ? '#fb7185' : '#94a3b8'}
+                              strokeWidth={critical ? 2 : 1.5}
+                              strokeDasharray={critical ? undefined : '4 3'}
+                              opacity={1}
+                            />
+                          </g>
+                        )
+                      })
                     })}
                   </svg>
 
@@ -283,7 +380,12 @@ function BoardGantt() {
                   const end = parseDate(task.end_date as string)
                   const offset = (start.getTime() - (timeline.start as Date).getTime()) / (DAY_MS * 7)
                   const duration = (end.getTime() - start.getTime()) / (DAY_MS * 7) + 1 / 7
-                  const barColor = task.critical ? 'bg-rose-400' : task.progress === 100 ? 'bg-emerald-400' : 'bg-slate-500'
+                  const isCritical = criticalIds.has(task.id)
+                  const barColor = isCritical
+                    ? 'bg-[#7f1d3b]'
+                    : task.progress === 100
+                      ? 'bg-emerald-400'
+                      : 'bg-slate-500'
                   const progressWidth = Math.max(0, Math.min(100, task.progress))
 
                   return (
@@ -293,8 +395,8 @@ function BoardGantt() {
                       style={{ gridTemplateColumns: `${labelWidth}px 1fr` }}
                     >
                       <div className="min-w-0 px-5 py-3">
-                        <p className="truncate text-sm font-medium text-white">{task.title}</p>
-                        <p className="truncate text-xs text-slate-500">
+                        <p className="break-words text-sm font-medium text-white">{task.title}</p>
+                        <p className="break-words text-xs text-slate-500">
                           {task.columnName} · {task.progress}%
                         </p>
                       </div>
@@ -306,15 +408,20 @@ function BoardGantt() {
                           <span key={week.toISOString()} className="h-full border-l border-white/5" />
                         ))}
                         <div
-                          className={`absolute z-10 h-8 overflow-hidden rounded-md border ${task.critical ? 'border-rose-300/80' : 'border-white/20'} ${barColor}`}
+                          className={`absolute z-40 h-7 overflow-visible rounded-md border ${isCritical ? 'border-rose-200 shadow-[0_0_0_1px_rgba(251,113,133,0.55),0_0_12px_rgba(244,63,94,0.22)]' : 'border-white/20'} ${barColor}`}
                           style={{
                             left: offset * weekWidth + 3,
-                            width: Math.max(duration * weekWidth - 6, 18),
+                            width: Math.max(duration * weekWidth - 6, 38),
                           }}
                           title={`${task.start_date} → ${task.end_date}`}
                         >
-                          <div className="h-full bg-white/35" style={{ width: `${progressWidth}%` }} />
-                          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-slate-950">
+                          <div className="absolute inset-0 overflow-hidden rounded-[5px]">
+                            <div
+                              className={isCritical ? 'h-full bg-rose-400/80' : 'h-full bg-white/35'}
+                              style={{ width: `${progressWidth}%` }}
+                            />
+                          </div>
+                          <span className={`absolute inset-0 z-10 flex items-center justify-center whitespace-nowrap text-[10px] font-bold ${isCritical ? 'text-white' : 'text-slate-950'}`}>
                             {task.progress}%
                           </span>
                         </div>

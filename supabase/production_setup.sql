@@ -10,6 +10,7 @@ create table if not exists public.board_columns (
   board_id uuid not null references public.boards(id) on delete cascade,
   name text not null check (char_length(trim(name)) > 0),
   position integer not null default 0 check (position >= 0),
+  predecessor_ids uuid[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -33,6 +34,9 @@ create index if not exists tasks_column_id_position_idx
   on public.tasks (column_id, position, created_at);
 
 alter table public.tasks enable row level security;
+
+alter table public.tasks
+  add column if not exists predecessor_ids uuid[] not null default '{}';
 
 create or replace function public.user_can_access_board(target_board_id uuid)
 returns boolean

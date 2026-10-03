@@ -65,6 +65,35 @@ const defaultBoardForm: BoardFormState = {
   color: '#6366f1',
 }
 
+function createsDependencyCycle(
+  tasks: Task[],
+  taskId: string,
+  predecessorIds: string[],
+) {
+  const dependencies = new Map(
+    tasks.map((task) => [
+      task.id,
+      task.id === taskId ? predecessorIds : task.predecessor_ids ?? [],
+    ]),
+  )
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+
+  function visit(currentId: string): boolean {
+    if (visiting.has(currentId)) return true
+    if (visited.has(currentId)) return false
+    visiting.add(currentId)
+    for (const predecessorId of dependencies.get(currentId) ?? []) {
+      if (dependencies.has(predecessorId) && visit(predecessorId)) return true
+    }
+    visiting.delete(currentId)
+    visited.add(currentId)
+    return false
+  }
+
+  return visit(taskId)
+}
+
 function parseDateValue(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -759,6 +788,7 @@ function Dashboard() {
       priority: task.priority,
       startDate: task.start_date ?? '',
       endDate: task.end_date ?? '',
+      predecessorIds: task.predecessor_ids ?? [],
     })
     setColumnError('')
   }
@@ -777,6 +807,16 @@ function Dashboard() {
     try {
       setColumnError('')
       setSavingTask(true)
+      const allTasks = Object.values(tasksByColumn).flat()
+      if (
+        createsDependencyCycle(
+          allTasks,
+          editingTask.id,
+          editingTask.predecessorIds,
+        )
+      ) {
+        throw new Error('Las dependencias formarían un ciclo. Elige otra predecesora.')
+      }
 
       const updatedTask = await updateTask(
         editingTask.id,
@@ -785,6 +825,7 @@ function Dashboard() {
         editingTask.priority,
         editingTask.startDate || null,
         editingTask.endDate || null,
+        editingTask.predecessorIds,
       )
 
       setTasksByColumn((currentTasks) => ({
@@ -1878,6 +1919,7 @@ function Dashboard() {
                               onDeleteTask={(task) =>
                                 handleDeleteTask(task.id, column.id)
                               }
+                              availableTasks={Object.values(tasksByColumn).flat()}
                             />
                             <div
                               key={column.id}
@@ -2067,6 +2109,7 @@ function Dashboard() {
                                         onDelete={(currentTask) =>
                                           handleDeleteTask(currentTask.id, column.id)
                                         }
+                                        availableTasks={Object.values(tasksByColumn).flat()}
                                       />
                                       <div
                                         key={task.id}
