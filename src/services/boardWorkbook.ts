@@ -5,7 +5,7 @@ import type { BoardColumn } from './columns'
 import type { Task, TaskPriority } from './tasks'
 
 export type WorkbookTaskRow = {
-  'N° actividad': number | string
+  'N° Tarea': number | string
   Columna: string
   Tarea: string
   Descripción: string
@@ -73,7 +73,7 @@ function normalizeDate(value: unknown): string | null {
 export function downloadBoardTemplate() {
   const rows: WorkbookTaskRow[] = [
     {
-      'N° actividad': 1,
+      'N° Tarea': 1,
       Columna: 'Por hacer',
       Tarea: 'Ejemplo: definir alcance',
       Descripción: 'Reemplaza esta fila o elimínala.',
@@ -83,7 +83,7 @@ export function downloadBoardTemplate() {
       Predecesoras: '',
     },
     {
-      'N° actividad': 2,
+      'N° Tarea': 2,
       Columna: 'En progreso',
       Tarea: '',
       Descripción: '',
@@ -93,7 +93,7 @@ export function downloadBoardTemplate() {
       Predecesoras: '1',
     },
     {
-      'N° actividad': 3,
+      'N° Tarea': 3,
       Columna: 'Completado',
       Tarea: '',
       Descripción: '',
@@ -127,7 +127,7 @@ export function exportBoardWorkbook(
   const activityNumbers = new Map(allTasks.map(({ task }, index) => [task.id, index + 1]))
   const rows: WorkbookTaskRow[] = allTasks.map(({ column, task }, index) => ({
       Columna: column.name,
-      'N° actividad': index + 1,
+      'N° Tarea': index + 1,
       Tarea: task.title,
       Descripción: task.description ?? '',
       Prioridad: task.priority === 'high' ? 'Alta' : task.priority === 'low' ? 'Baja' : 'Media',
@@ -142,7 +142,7 @@ export function exportBoardWorkbook(
     ? rows
     : columns.map((column) => ({
       Columna: column.name,
-      'N° actividad': '',
+      'N° Tarea': '',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
@@ -188,7 +188,10 @@ export async function readBoardWorkbook(file: File): Promise<ImportedBoard> {
       grouped.set(columnName, column)
       return
     }
-    const activityNumber = Number.parseInt(String(row['N° actividad'] ?? ''), 10) || nextActivityNumber
+    const activityNumber = Number.parseInt(
+      String(row['N° Tarea'] ?? (row as Record<string, unknown>)['N° actividad'] ?? ''),
+      10,
+    ) || nextActivityNumber
     column.tasks.push({
       title,
       description: String(row.Descripción ?? '').trim(),

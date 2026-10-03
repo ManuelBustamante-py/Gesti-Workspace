@@ -174,6 +174,7 @@ function Dashboard() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [importingBoard, setImportingBoard] = useState(false)
   const [boardViewMinimized, setBoardViewMinimized] = useState(false)
+  const [selectedTaskRelationId, setSelectedTaskRelationId] = useState<string | null>(null)
   const ganttViewOpen = false
 
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
@@ -1943,6 +1944,12 @@ function Dashboard() {
                                 handleDeleteTask(task.id, column.id)
                               }
                               availableTasks={Object.values(tasksByColumn).flat()}
+                              selectedTaskId={selectedTaskRelationId}
+                              onSelectTaskRelation={(taskId) =>
+                                setSelectedTaskRelationId((currentId) =>
+                                  currentId === taskId ? null : taskId,
+                                )
+                              }
                             />
                             <div
                               key={column.id}
@@ -2133,6 +2140,12 @@ function Dashboard() {
                                           handleDeleteTask(currentTask.id, column.id)
                                         }
                                         availableTasks={Object.values(tasksByColumn).flat()}
+                                        selectedTaskId={selectedTaskRelationId}
+                                        onSelectTaskRelation={(taskId) =>
+                                          setSelectedTaskRelationId((currentId) =>
+                                            currentId === taskId ? null : taskId,
+                                          )
+                                        }
                                       />
                                       <div
                                         key={task.id}

@@ -30,6 +30,8 @@ interface ColumnProps {
   onMoveTask: (task: Task, columnId: string) => void
   onDeleteTask: (task: Task) => void
   availableTasks: Task[]
+  selectedTaskId: string | null
+  onSelectTaskRelation: (taskId: string) => void
 }
 
 function Column({
@@ -58,6 +60,8 @@ function Column({
   onMoveTask,
   onDeleteTask,
   availableTasks,
+  selectedTaskId,
+  onSelectTaskRelation,
 }: ColumnProps) {
   const normalizedName = column.name.toLowerCase()
   const statusClass = normalizedName.includes('complet') || normalizedName.includes('final')
@@ -148,6 +152,8 @@ function Column({
               onMove={onMoveTask}
               onDelete={onDeleteTask}
               availableTasks={availableTasks}
+              selectedTaskId={selectedTaskId}
+              onSelectTaskRelation={onSelectTaskRelation}
             />
           ))
         )}

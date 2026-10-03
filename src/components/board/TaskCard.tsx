@@ -26,6 +26,8 @@ interface TaskCardProps {
   onMove: (task: Task, columnId: string) => void
   onDelete: (task: Task) => void
   availableTasks: Task[]
+  selectedTaskId: string | null
+  onSelectTaskRelation: (taskId: string) => void
 }
 
 const priorityLabels: Record<TaskPriority, string> = {
@@ -47,6 +49,8 @@ function TaskCard({
   onMove,
   onDelete,
   availableTasks,
+  selectedTaskId,
+  onSelectTaskRelation,
 }: TaskCardProps) {
   const isEditing = editingTask?.id === task.id
   const numberedTasks = [...availableTasks].sort((left, right) => {
@@ -57,6 +61,14 @@ function TaskCard({
   const predecessorTasks = (task.predecessor_ids ?? [])
     .map((predecessorId) => numberedTasks.find((candidate) => candidate.id === predecessorId))
     .filter((candidate): candidate is Task => Boolean(candidate))
+  const successorTasks = numberedTasks.filter((candidate) =>
+    (candidate.predecessor_ids ?? []).includes(task.id),
+  )
+  const relationSelected = selectedTaskId === task.id
+  const relationHighlighted =
+    relationSelected ||
+    predecessorTasks.some((candidate) => candidate.id === selectedTaskId) ||
+    successorTasks.some((candidate) => candidate.id === selectedTaskId)
 
   if (isEditing && editingTask) {
     return (
@@ -137,9 +149,27 @@ function TaskCard({
   }
 
   return (
-    <div className="task-card">
+    <div className={`task-card transition ${
+      selectedTaskId && !relationHighlighted ? 'opacity-35' : ''
+    } ${
+      relationSelected ? 'ring-2 ring-[var(--accent-mint)]' : ''
+    }`}>
       <p className="text-sm font-medium text-[var(--text-main)]">
-        <span className="mr-2 text-xs text-[var(--text-muted)]">#{activityNumber}</span>
+        <button
+          type="button"
+          onClick={() => onSelectTaskRelation(task.id)}
+          className={`mr-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full border px-1 text-xs font-semibold transition ${
+            relationSelected
+              ? 'border-[var(--accent-mint)] bg-[var(--accent-mint)] text-[var(--bg-main)]'
+              : relationHighlighted
+                ? 'border-amber-300 bg-amber-300/20 text-amber-200'
+                : 'border-white/20 text-[var(--text-muted)] hover:border-[var(--accent-mint)] hover:text-white'
+          }`}
+          aria-label={`Mostrar relaciones de la tarea ${activityNumber}`}
+          title="Mostrar predecesoras y sucesoras"
+        >
+          {activityNumber}
+        </button>
         {task.title}
       </p>
       {predecessorTasks.length > 0 && (
