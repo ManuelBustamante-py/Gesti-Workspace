@@ -133,6 +133,18 @@ function BoardGantt() {
 
   const labelWidth = 280
   const dayWidth = 42
+  const rowHeight = 72
+  const orderedTasks = [...tasks].sort((left, right) => {
+    const startDifference =
+      parseDate(left.start_date as string).getTime() -
+      parseDate(right.start_date as string).getTime()
+
+    return startDifference || left.position - right.position
+  })
+  const todayOffset =
+    timeline.start && timeline.end
+      ? (Date.now() - timeline.start.getTime()) / DAY_MS
+      : -1
 
   return (
     <main className="min-h-screen bg-[var(--bg-main)] px-3 py-4 text-slate-100 sm:px-6 sm:py-7">
@@ -192,7 +204,62 @@ function BoardGantt() {
                   </div>
                 </div>
 
-                {tasks.map((task) => {
+                <div className="relative">
+                  <svg
+                    aria-hidden="true"
+                    className="pointer-events-none absolute top-0 z-20"
+                    width={timeline.days.length * dayWidth}
+                    height={orderedTasks.length * rowHeight}
+                    style={{ left: labelWidth }}
+                  >
+                    {orderedTasks.slice(0, -1).map((task, index) => {
+                      const nextTask = orderedTasks[index + 1]
+                      const taskStart = parseDate(task.start_date as string)
+                      const taskEnd = parseDate(task.end_date as string)
+                      const nextStart = parseDate(nextTask.start_date as string)
+                      const taskOffset = Math.round(
+                        (taskStart.getTime() - (timeline.start as Date).getTime()) / DAY_MS,
+                      )
+                      const taskDuration =
+                        Math.round((taskEnd.getTime() - taskStart.getTime()) / DAY_MS) + 1
+                      const nextOffset = Math.round(
+                        (nextStart.getTime() - (timeline.start as Date).getTime()) / DAY_MS,
+                      )
+                      const startX = taskOffset * dayWidth + taskDuration * dayWidth - 3
+                      const endX = nextOffset * dayWidth + 3
+                      const startY = index * rowHeight + rowHeight / 2
+                      const endY = (index + 1) * rowHeight + rowHeight / 2
+                      const bendX = Math.max(startX + 12, endX - 12)
+                      const critical = task.critical && nextTask.critical
+
+                      return (
+                        <path
+                          key={`${task.id}-${nextTask.id}`}
+                          d={`M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`}
+                          fill="none"
+                          stroke={critical ? '#fb7185' : '#64748b'}
+                          strokeWidth={critical ? 2 : 1.5}
+                          strokeDasharray={critical ? undefined : '4 3'}
+                          opacity={critical ? 0.95 : 0.7}
+                        />
+                      )
+                    })}
+                  </svg>
+
+                  {todayOffset >= 0 && todayOffset <= timeline.days.length - 1 && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 z-30 w-0.5 bg-lime-300"
+                      style={{
+                        left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
+                      }}
+                    >
+                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-lime-300 px-2 py-1 text-[10px] font-semibold text-slate-950">
+                        Hoy
+                      </span>
+                    </div>
+                  )}
+
+                {orderedTasks.map((task) => {
                   const start = parseDate(task.start_date as string)
                   const end = parseDate(task.end_date as string)
                   const offset = Math.round((start.getTime() - (timeline.start as Date).getTime()) / DAY_MS)
@@ -236,6 +303,7 @@ function BoardGantt() {
                     </div>
                   )
                 })}
+                </div>
               </div>
             </div>
           )}
@@ -244,7 +312,9 @@ function BoardGantt() {
             <span><i className="mr-2 inline-block h-3 w-3 rounded-sm bg-rose-400" />Ruta crítica visual</span>
             <span><i className="mr-2 inline-block h-3 w-3 rounded-sm bg-emerald-400" />Completada</span>
             <span><i className="mr-2 inline-block h-3 w-3 rounded-sm bg-slate-500" />Pendiente</span>
-            <span>La ruta crítica se basa en prioridad alta hasta disponer de dependencias entre tareas.</span>
+            <span><i className="mr-2 inline-block h-0.5 w-4 align-middle bg-rose-400" />Secuencia crítica</span>
+            <span><i className="mr-2 inline-block h-0.5 w-4 align-middle border-t border-dashed border-slate-500" />Dependencia visual</span>
+            <span>La ruta crítica visual combina prioridad alta y orden cronológico; las dependencias aún no se almacenan.</span>
           </div>
         </section>
       </div>
