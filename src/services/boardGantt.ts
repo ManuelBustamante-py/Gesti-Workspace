@@ -59,7 +59,7 @@ export function exportBoardProjectXml(
   )
   const projectTasks = scheduledTasks.map(
     ({ task, column, start, finish, durationDays, status }, index) =>
-      `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Manual>1</Manual><Type>1</Type><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><ConstraintType>4</ConstraintType><ConstraintDate>${isoDate(start, fallbackDate)}</ConstraintDate><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1></Task>`,
+      `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1></Task>`,
   ).join('')
 
   const content = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -69,12 +69,30 @@ export function exportBoardProjectXml(
   <Title>${xml(board.name)}</Title>
   <Subject>${xml(board.description ?? '')}</Subject>
   <ScheduleFromStart>1</ScheduleFromStart>
+  <CalendarUID>1</CalendarUID>
   <StartDate>${projectDate(projectStart)}</StartDate>
   <FinishDate>${projectDate(projectFinish)}</FinishDate>
   <DefaultStartTime>PT08H0M0S</DefaultStartTime>
   <DefaultFinishTime>PT17H0M0S</DefaultFinishTime>
   <MinutesPerDay>480</MinutesPerDay>
-  <MinutesPerWeek>2400</MinutesPerWeek>
+  <MinutesPerWeek>3360</MinutesPerWeek>
+  <Calendars>
+    <Calendar>
+      <UID>1</UID>
+      <Name>Gesti - Todos los días</Name>
+      <IsBaseCalendar>1</IsBaseCalendar>
+      <BaseCalendarUID>0</BaseCalendarUID>
+      <WeekDays>
+        <WeekDay><DayType>1</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>2</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>3</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>4</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>7</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+      </WeekDays>
+    </Calendar>
+  </Calendars>
   <Tasks>${projectTasks}</Tasks>
 </Project>`
   const blob = new Blob([content], { type: 'application/xml;charset=utf-8' })

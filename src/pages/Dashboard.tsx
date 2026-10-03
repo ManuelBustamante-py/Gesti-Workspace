@@ -101,6 +101,7 @@ function Dashboard() {
   const [memberRole, setMemberRole] = useState<BoardMemberRole>('viewer')
   const [invitingMember, setInvitingMember] = useState(false)
   const [memberError, setMemberError] = useState('')
+  const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -297,8 +298,23 @@ function Dashboard() {
 
   function handleCloseBoardDetail() {
     setSelectedBoardId(null)
+    setCollaboratorsModalOpen(false)
     window.history.replaceState(null, '', window.location.pathname)
   }
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setCollaboratorsModalOpen(false)
+      }
+    }
+
+    if (collaboratorsModalOpen) {
+      window.addEventListener('keydown', closeOnEscape)
+    }
+
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [collaboratorsModalOpen])
 
   function handleToggleBoardView() {
     if (!selectedBoardId) {
@@ -907,6 +923,20 @@ function Dashboard() {
               </span>
             )}
           </button>
+          {selectedBoardId && (
+            <button
+              type="button"
+              title="Gestionar colaboradores"
+              onClick={() => {
+                setCollaboratorsModalOpen(true)
+                setMobileMenuOpen(false)
+              }}
+              className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[var(--text-muted)] hover:bg-white/5"
+            >
+              <span aria-hidden="true">♧ </span>
+              <span className="sidebar-label">Colaboradores</span>
+            </button>
+          )}
         </nav>
         <div className="mt-8 border-t border-slate-800 pt-6">
           <div
@@ -1255,7 +1285,7 @@ function Dashboard() {
 
                   {!boardViewMinimized && (
                     <>
-                    <div className="glass-panel mt-5 rounded-xl p-4">
+                    <div className="hidden">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <h3 className="text-lg font-medium text-white">
@@ -1852,6 +1882,144 @@ function Dashboard() {
           </section>
         )}
       </div>
+
+      {collaboratorsModalOpen && selectedBoardId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-6"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setCollaboratorsModalOpen(false)
+            }
+          }}
+        >
+          <section
+            className="glass-panel max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl p-5 shadow-2xl sm:p-7"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="collaborators-modal-title"
+          >
+            {(() => {
+              const selectedBoard = boards.find((board) => board.id === selectedBoardId)
+              if (!selectedBoard) return null
+
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 id="collaborators-modal-title" className="text-xl font-semibold text-white sm:text-2xl">
+                        Compartir “{selectedBoard.name}”
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Invita personas por correo y define su nivel de acceso.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCollaboratorsModalOpen(false)}
+                      className="text-xl text-slate-400 transition hover:text-white"
+                      aria-label="Cerrar colaboradores"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleInviteMember} className="mt-6 grid gap-3 md:grid-cols-[1fr_auto_auto]">
+                    <input
+                      type="email"
+                      value={memberEmail}
+                      onChange={(event) => setMemberEmail(event.target.value)}
+                      placeholder="persona@empresa.com"
+                      className="theme-input min-w-0 rounded-lg px-4 py-3"
+                      required
+                    />
+                    <select
+                      value={memberRole}
+                      onChange={(event) => setMemberRole(event.target.value as BoardMemberRole)}
+                      className="theme-input rounded-lg px-4 py-3"
+                    >
+                      <option value="viewer">Lector</option>
+                      <option value="editor">Editor</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={invitingMember}
+                      className="btn-mint-primary px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {invitingMember ? 'Invitando...' : 'Invitar'}
+                    </button>
+                  </form>
+
+                  {memberError && <p className="alert-error mt-3 rounded-lg p-3 text-sm">{memberError}</p>}
+
+                  <div className="mt-7">
+                    <p className="border-b border-white/10 pb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Con acceso · {boardMembers.length + 1}
+                    </p>
+                    <div className="divide-y divide-white/10">
+                      <div className="flex items-center gap-3 py-4">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-mint)] font-semibold text-[var(--bg-main)]">
+                          {(profile?.display_name ?? user?.email ?? 'Tú').slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-white">
+                            {profile?.display_name ?? 'Tú'} <span className="text-slate-500">(tú)</span>
+                          </p>
+                          <p className="truncate text-sm text-slate-400">{user?.email}</p>
+                        </div>
+                        <span className="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-300">Propietario</span>
+                      </div>
+
+                      {boardMembers.map((member) => (
+                        <div key={member.id} className="flex items-center gap-3 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-300 font-semibold text-slate-900">
+                            {(member.profile?.display_name ?? member.profile?.username ?? 'U').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-white">
+                              {member.profile?.display_name ?? member.profile?.username ?? 'Usuario'}
+                            </p>
+                            <p className="truncate text-sm text-slate-400">
+                              @{member.profile?.username ?? 'sin username'}
+                            </p>
+                          </div>
+                          <span className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-300">
+                            {member.role === 'editor' ? 'Editor' : 'Lector'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {boardInvitations.length > 0 && (
+                    <div className="mt-6">
+                      <p className="border-b border-white/10 pb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Invitaciones pendientes · {boardInvitations.filter((invitation) => invitation.status === 'pending').length}
+                      </p>
+                      <div className="divide-y divide-white/10">
+                        {boardInvitations.map((invitation) => (
+                          <div key={invitation.id} className="flex flex-wrap items-center gap-3 py-4">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-300">✉</div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-white">{invitation.email}</p>
+                              <p className="text-sm text-slate-400">
+                                Enviada · {invitation.role === 'editor' ? 'Editor' : 'Lector'}
+                              </p>
+                            </div>
+                            <span className={`rounded-lg px-3 py-2 text-sm ${invitation.status === 'pending' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-slate-400'}`}>
+                              {invitation.status === 'pending' ? 'Pendiente' : invitation.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </section>
+        </div>
+      )}
 
       {editingBoard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
