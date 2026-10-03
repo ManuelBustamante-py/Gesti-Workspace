@@ -56,6 +56,7 @@ textarea:focus {
 }
 
 .column-panel {
+  min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 1rem;
   background: var(--bg-column);
@@ -292,6 +293,12 @@ textarea:focus {
   transition: width 180ms ease, transform 180ms ease;
 }
 
+.kanban-columns {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
 .sidebar-collapsed {
   width: 5.25rem;
 }
@@ -385,6 +392,12 @@ textarea:focus {
 
   .mobile-menu-button {
     display: inline-flex;
+    position: fixed;
+    top: 0.85rem;
+    left: 1rem;
+    z-index: 50;
+    height: 2.75rem;
+    width: 2.75rem;
     align-items: center;
     justify-content: center;
     border: 1px solid rgba(166, 180, 184, 0.18);
@@ -392,16 +405,46 @@ textarea:focus {
     background: rgba(27, 32, 35, 0.9);
     color: var(--text-muted);
     padding: 0.5rem;
-    left: 1rem;
-    transition: left 180ms ease, color 160ms ease, background-color 160ms ease;
+    transition: right 180ms ease, color 160ms ease, background-color 160ms ease;
   }
 
   .mobile-menu-button-open {
-    left: calc(min(18rem, 84vw) - 3.25rem);
+    left: auto;
+    right: 1rem;
   }
 
   .mobile-menu-button:hover {
     color: var(--accent-ui);
+  }
+
+  .sidebar {
+    padding-top: 5rem;
+  }
+
+  .kanban-columns {
+    display: flex;
+    max-width: 100%;
+    margin-right: -0.25rem;
+    padding: 0.15rem 0.25rem 0.75rem 0.05rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(166, 180, 184, 0.35) transparent;
+  }
+
+  .kanban-columns .column-panel {
+    flex: 0 0 min(82vw, 22rem);
+    scroll-snap-align: start;
+  }
+
+  .kanban-columns::-webkit-scrollbar {
+    height: 0.35rem;
+  }
+
+  .kanban-columns::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(166, 180, 184, 0.35);
   }
 }
 

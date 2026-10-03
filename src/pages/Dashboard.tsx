@@ -751,10 +751,10 @@ function Dashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-transparent text-[var(--text-main)] md:flex">
+    <main className="min-h-screen min-w-0 bg-transparent text-[var(--text-main)] md:flex">
       <button
         type="button"
-        className={`mobile-menu-button fixed top-4 z-50 ${mobileMenuOpen ? 'mobile-menu-button-open' : ''}`}
+        className={`mobile-menu-button fixed z-50 ${mobileMenuOpen ? 'mobile-menu-button-open' : ''}`}
         onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
         aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
       >
@@ -830,7 +830,7 @@ function Dashboard() {
         </div>
       </aside>
 
-      <div className="w-full p-5 pt-20 md:p-8">
+      <div className="min-w-0 w-full p-5 pt-20 md:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="flex items-center justify-between">
           <div>
@@ -1218,7 +1218,7 @@ function Dashboard() {
                         Aún no hay columnas en este tablero.
                       </div>
                     ) : (
-                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="kanban-columns mt-4">
                         {boardsColumns.map((column) => {
                           const columnTasks = tasksByColumn[column.id] ?? []
 
