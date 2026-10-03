@@ -37,7 +37,10 @@ import {
   type BoardMember,
   type BoardMemberRole,
 } from '../services/boardMembers'
-import { getProfile, type Profile } from '../services/profiles'
+import {
+  syncProfileFromAuthUser,
+  type Profile,
+} from '../services/profiles'
 import {
   downloadBoardTemplate,
   exportBoardWorkbook,
@@ -134,7 +137,7 @@ function Dashboard() {
       }
 
       try {
-        setProfile(await getProfile(user.id))
+        setProfile(await syncProfileFromAuthUser(user))
       } catch (err) {
         console.error('Error al cargar el perfil del dashboard:', err)
       }

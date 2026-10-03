@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { logout } from '../services/auth'
 import {
   changePassword,
-  getProfile,
+  syncProfileFromAuthUser,
   updateProfile,
   type Profile as ProfileData,
 } from '../services/profiles'
@@ -34,7 +34,7 @@ function Profile() {
       }
 
       try {
-        const data = await getProfile(user.id)
+        const data = await syncProfileFromAuthUser(user)
         setProfile(data)
         setUsername(data.username ?? '')
         const nameParts = (data.display_name ?? '').trim().split(/\s+/)

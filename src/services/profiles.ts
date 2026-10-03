@@ -1,3 +1,5 @@
+import type { User } from '@supabase/supabase-js'
+
 import { supabase } from '../lib/supabase'
 
 export interface Profile {
@@ -16,6 +18,66 @@ export async function getProfile(userId: string) {
     .from('profiles')
     .select('*')
     .eq('id', userId)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as Profile
+}
+
+export async function syncProfileFromAuthUser(user: User) {
+  const profile = await getProfile(user.id)
+  const metadata = user.user_metadata
+  const fullName =
+    metadata.full_name ?? metadata.name ?? metadata.display_name ?? ''
+  const nameParts = String(fullName).trim().split(/\s+/).filter(Boolean)
+  const firstName = String(
+    metadata.first_name ?? metadata.given_name ?? nameParts[0] ?? '',
+  ).trim()
+  const lastName = String(
+    metadata.last_name ??
+      metadata.family_name ??
+      nameParts.slice(1).join(' '),
+  ).trim()
+  const username = String(
+    metadata.username ?? user.email?.split('@')[0] ?? '',
+  ).trim()
+  const displayName = `${firstName} ${lastName}`.trim() || fullName.trim()
+  const updates: Partial<Profile> & { updated_at: string } = {
+    updated_at: new Date().toISOString(),
+  }
+
+  if (!profile.first_name && firstName) {
+    updates.first_name = firstName
+  }
+
+  if (!profile.last_name && lastName) {
+    updates.last_name = lastName
+  }
+
+  if (!profile.username && username) {
+    updates.username = username
+  }
+
+  if (!profile.display_name && displayName) {
+    updates.display_name = displayName
+  }
+
+  if (!profile.avatar_url && metadata.avatar_url) {
+    updates.avatar_url = String(metadata.avatar_url)
+  }
+
+  if (Object.keys(updates).length === 1) {
+    return profile
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', user.id)
+    .select()
     .single()
 
   if (error) {
