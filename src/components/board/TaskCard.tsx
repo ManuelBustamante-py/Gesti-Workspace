@@ -49,6 +49,14 @@ function TaskCard({
   availableTasks,
 }: TaskCardProps) {
   const isEditing = editingTask?.id === task.id
+  const numberedTasks = [...availableTasks].sort((left, right) => {
+    const createdDifference = left.created_at.localeCompare(right.created_at)
+    return createdDifference || left.id.localeCompare(right.id)
+  })
+  const activityNumber = numberedTasks.findIndex((candidate) => candidate.id === task.id) + 1
+  const predecessorTasks = (task.predecessor_ids ?? [])
+    .map((predecessorId) => numberedTasks.find((candidate) => candidate.id === predecessorId))
+    .filter((candidate): candidate is Task => Boolean(candidate))
 
   if (isEditing && editingTask) {
     return (
@@ -111,7 +119,7 @@ function TaskCard({
               .filter((candidate) => candidate.id !== task.id)
               .map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
-                  {candidate.title}
+                  #{numberedTasks.findIndex((item) => item.id === candidate.id) + 1} · {candidate.title}
                 </option>
               ))}
           </select>
@@ -130,7 +138,18 @@ function TaskCard({
 
   return (
     <div className="task-card">
-      <p className="text-sm font-medium text-[var(--text-main)]">{task.title}</p>
+      <p className="text-sm font-medium text-[var(--text-main)]">
+        <span className="mr-2 text-xs text-[var(--text-muted)]">#{activityNumber}</span>
+        {task.title}
+      </p>
+      {predecessorTasks.length > 0 && (
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          Predecesora{predecessorTasks.length === 1 ? '' : 's'}:{' '}
+          {predecessorTasks
+            .map((predecessor) => `#${numberedTasks.findIndex((item) => item.id === predecessor.id) + 1}`)
+            .join(', ')}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
         <span className={`priority-${task.priority} rounded-full px-2 py-1`}>
           Prioridad {priorityLabels[task.priority]}

@@ -964,10 +964,11 @@ function Dashboard() {
       importedBoard.color,
       user.id,
     )
+    const importedTasks = new Map<number, Task>()
     for (const importedColumn of importedBoard.columns) {
       const column = await createBoardColumn(board.id, importedColumn.name)
       for (const importedTask of importedColumn.tasks) {
-        await createTask(
+        const createdTask = await createTask(
           column.id,
           importedTask.title,
           importedTask.description,
@@ -975,6 +976,28 @@ function Dashboard() {
           importedTask.startDate,
           importedTask.endDate,
         )
+        importedTasks.set(importedTask.activityNumber, createdTask)
+      }
+    }
+
+    for (const importedColumn of importedBoard.columns) {
+      for (const importedTask of importedColumn.tasks) {
+        const createdTask = importedTasks.get(importedTask.activityNumber)
+        if (!createdTask || importedTask.predecessorNumbers.length === 0) continue
+        const predecessorIds = importedTask.predecessorNumbers
+          .map((number) => importedTasks.get(number)?.id)
+          .filter((id): id is string => Boolean(id))
+        if (predecessorIds.length > 0) {
+          await updateTask(
+            createdTask.id,
+            createdTask.title,
+            createdTask.description ?? '',
+            createdTask.priority,
+            createdTask.start_date,
+            createdTask.end_date,
+            predecessorIds,
+          )
+        }
       }
     }
     setBoards((currentBoards) => [board, ...currentBoards])

@@ -395,7 +395,12 @@ function BoardGantt() {
                       style={{ gridTemplateColumns: `${labelWidth}px 1fr` }}
                     >
                       <div className="min-w-0 px-5 py-3">
-                        <p className="break-words text-sm font-medium text-white">{task.title}</p>
+                        <p className="break-words text-sm font-medium text-white">
+                          <span className="mr-2 text-xs text-slate-500">
+                            #{orderedTasks.findIndex((item) => item.id === task.id) + 1}
+                          </span>
+                          {task.title}
+                        </p>
                         <p className="break-words text-xs text-slate-500">
                           {task.columnName} · {task.progress}%
                         </p>

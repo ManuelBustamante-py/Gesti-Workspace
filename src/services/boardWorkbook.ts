@@ -5,12 +5,14 @@ import type { BoardColumn } from './columns'
 import type { Task, TaskPriority } from './tasks'
 
 export type WorkbookTaskRow = {
+  'N° actividad': number | string
   Columna: string
   Tarea: string
   Descripción: string
   Prioridad: string
   'Fecha inicio': string
   'Fecha fin': string
+  Predecesoras: string
   'Fecha vencimiento'?: string
 }
 
@@ -26,6 +28,8 @@ export type ImportedBoard = {
       priority: TaskPriority
       startDate: string | null
       endDate: string | null
+      activityNumber: number
+      predecessorNumbers: number[]
     }>
   }>
 }
@@ -69,33 +73,39 @@ function normalizeDate(value: unknown): string | null {
 export function downloadBoardTemplate() {
   const rows: WorkbookTaskRow[] = [
     {
+      'N° actividad': 1,
       Columna: 'Por hacer',
       Tarea: 'Ejemplo: definir alcance',
       Descripción: 'Reemplaza esta fila o elimínala.',
       Prioridad: 'Media',
       'Fecha inicio': '2026-12-01',
       'Fecha fin': '2026-12-31',
+      Predecesoras: '',
     },
     {
+      'N° actividad': 2,
       Columna: 'En progreso',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
       'Fecha inicio': '',
       'Fecha fin': '',
+      Predecesoras: '1',
     },
     {
+      'N° actividad': 3,
       Columna: 'Completado',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
       'Fecha inicio': '',
       'Fecha fin': '',
+      Predecesoras: '',
     },
   ]
   const sheet = XLSX.utils.json_to_sheet(rows)
-  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
-  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1'].forEach((cell) => {
+  sheet['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1'].forEach((cell) => {
     sheet[cell].s = headerStyle
   })
   rows.slice(0, 3).forEach((row, index) => {
@@ -111,29 +121,38 @@ export function exportBoardWorkbook(
   columns: BoardColumn[],
   tasksByColumn: Record<string, Task[]>,
 ) {
-  const rows: WorkbookTaskRow[] = columns.flatMap((column) =>
-    (tasksByColumn[column.id] ?? []).map((task) => ({
+  const allTasks = columns.flatMap((column) =>
+    (tasksByColumn[column.id] ?? []).map((task) => ({ column, task })),
+  )
+  const activityNumbers = new Map(allTasks.map(({ task }, index) => [task.id, index + 1]))
+  const rows: WorkbookTaskRow[] = allTasks.map(({ column, task }, index) => ({
       Columna: column.name,
+      'N° actividad': index + 1,
       Tarea: task.title,
       Descripción: task.description ?? '',
       Prioridad: task.priority === 'high' ? 'Alta' : task.priority === 'low' ? 'Baja' : 'Media',
       'Fecha inicio': task.start_date ?? '',
       'Fecha fin': task.end_date ?? '',
-    })),
-  )
+      Predecesoras: (task.predecessor_ids ?? [])
+        .map((id) => activityNumbers.get(id))
+        .filter((number): number is number => number !== undefined)
+        .join(', '),
+    }))
   const exportRows = rows.length > 0
     ? rows
     : columns.map((column) => ({
       Columna: column.name,
+      'N° actividad': '',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
       'Fecha inicio': '',
       'Fecha fin': '',
+      Predecesoras: '',
     }))
   const sheet = XLSX.utils.json_to_sheet(exportRows)
-  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
-  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1'].forEach((cell) => {
+  sheet['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1'].forEach((cell) => {
     sheet[cell].s = headerStyle
   })
   exportRows.forEach((row, index) => {
@@ -159,6 +178,7 @@ export async function readBoardWorkbook(file: File): Promise<ImportedBoard> {
 
   const grouped = new Map<string, ImportedBoard['columns'][number]>()
   let taskCount = 0
+  let nextActivityNumber = 1
   rows.forEach((row) => {
     const columnName = String(row.Columna ?? '').trim()
     const title = String(row.Tarea ?? '').trim()
@@ -168,13 +188,20 @@ export async function readBoardWorkbook(file: File): Promise<ImportedBoard> {
       grouped.set(columnName, column)
       return
     }
+    const activityNumber = Number.parseInt(String(row['N° actividad'] ?? ''), 10) || nextActivityNumber
     column.tasks.push({
       title,
       description: String(row.Descripción ?? '').trim(),
       priority: priorityFromValue(row.Prioridad),
       startDate: normalizeDate(row['Fecha inicio']),
       endDate: normalizeDate(row['Fecha fin']) ?? normalizeDate(row['Fecha vencimiento']),
+      activityNumber,
+      predecessorNumbers: String(row.Predecesoras ?? '')
+        .split(',')
+        .map((value) => Number.parseInt(value.trim(), 10))
+        .filter((value) => Number.isInteger(value) && value > 0),
     })
+    nextActivityNumber = Math.max(nextActivityNumber + 1, activityNumber + 1)
     taskCount += 1
     grouped.set(columnName, column)
   })
