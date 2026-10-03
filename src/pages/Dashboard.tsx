@@ -41,6 +41,7 @@ import {
   type BoardMemberRole,
 } from '../services/boardMembers'
 import {
+  getProfile,
   syncProfileFromAuthUser,
   type Profile,
 } from '../services/profiles'
@@ -104,6 +105,7 @@ function Dashboard() {
   const [memberError, setMemberError] = useState('')
   const [collaboratorsModalOpen, setCollaboratorsModalOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [boardOwnerProfile, setBoardOwnerProfile] = useState<Profile | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
@@ -126,6 +128,38 @@ function Dashboard() {
     )
     setBoardViewMinimized(savedMinimizedState === 'true')
   }, [selectedBoardId])
+
+  useEffect(() => {
+    const selectedBoard = boards.find((board) => board.id === selectedBoardId)
+
+    if (!selectedBoard) {
+      setBoardOwnerProfile(null)
+      return
+    }
+
+    if (selectedBoard.owner_id === user?.id) {
+      setBoardOwnerProfile(profile)
+      return
+    }
+
+    let cancelled = false
+    getProfile(selectedBoard.owner_id)
+      .then((ownerProfile) => {
+        if (!cancelled) {
+          setBoardOwnerProfile(ownerProfile)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Error al cargar el perfil del propietario:', err)
+          setBoardOwnerProfile(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [boards, profile, selectedBoardId, user?.id])
 
   useEffect(() => {
     if (!selectedBoardId || !user) {
@@ -2040,6 +2074,13 @@ function Dashboard() {
             {(() => {
               const selectedBoard = boards.find((board) => board.id === selectedBoardId)
               if (!selectedBoard) return null
+              const ownerIsCurrentUser = selectedBoard.owner_id === user?.id
+              const ownerProfile = ownerIsCurrentUser ? profile : boardOwnerProfile
+              const ownerName =
+                ownerProfile?.display_name ??
+                ownerProfile?.username ??
+                (ownerIsCurrentUser ? user?.email : undefined) ??
+                'Propietario'
 
               return (
                 <>
@@ -2096,22 +2137,27 @@ function Dashboard() {
                     </p>
                     <div className="divide-y divide-white/10">
                       <div className="flex items-center gap-3 py-4">
-                        {profile?.avatar_url ? (
+                        {ownerProfile?.avatar_url ? (
                           <img
-                            src={profile.avatar_url}
+                            src={ownerProfile.avatar_url}
                             alt="Avatar del propietario"
                             className="h-10 w-10 shrink-0 rounded-full object-cover"
                           />
                         ) : (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-mint)] font-semibold text-[var(--bg-main)]">
-                            {(profile?.display_name ?? user?.email ?? 'Tú').slice(0, 2).toUpperCase()}
+                            {ownerName.slice(0, 2).toUpperCase()}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-white">
-                            {profile?.display_name ?? 'Tú'} <span className="text-slate-500">(tú)</span>
+                            {ownerName}{' '}
+                            {ownerIsCurrentUser && <span className="text-slate-500">(tú)</span>}
                           </p>
-                          <p className="truncate text-sm text-slate-400">{user?.email}</p>
+                          <p className="truncate text-sm text-slate-400">
+                            {ownerIsCurrentUser
+                              ? user?.email
+                              : `@${ownerProfile?.username ?? 'sin username'}`}
+                          </p>
                         </div>
                         <span className="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-300">Propietario</span>
                       </div>
