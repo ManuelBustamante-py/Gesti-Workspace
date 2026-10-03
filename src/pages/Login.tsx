@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../services/auth'
+import OAuthProviderButtons from '../components/auth/OAuthProviderButtons'
 
 function Login() {
   const navigate = useNavigate()
@@ -43,9 +44,14 @@ function Login() {
           Accede a tus tableros Kanban.
         </p>
 
+        <OAuthProviderButtons
+          actionLabel="Iniciar sesión utilizando sus cuentas de:"
+          onError={setError}
+        />
+
         <form
           onSubmit={handleSubmit}
-          className="mt-8 space-y-5"
+          className="mt-6 space-y-5"
         >
           <div>
             <label

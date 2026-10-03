@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { register } from '../services/auth'
+import OAuthProviderButtons from '../components/auth/OAuthProviderButtons'
 
 function Register() {
   const navigate = useNavigate()
@@ -68,9 +69,14 @@ function Register() {
           Crea tu cuenta para comenzar a organizar tus proyectos.
         </p>
 
+        <OAuthProviderButtons
+          actionLabel="Registrarse utilizando sus cuentas de:"
+          onError={setError}
+        />
+
         <form
           onSubmit={handleSubmit}
-          className="mt-8 space-y-4"
+          className="mt-6 space-y-4"
         >
           <div>
             <label className="mb-2 block text-sm font-medium text-[var(--text-main)]">
@@ -163,7 +169,7 @@ function Register() {
           ¿Ya tienes una cuenta?{' '}
           <Link
             to="/login"
-            className="font-medium text-[var(--accent-mint)] hover:text-[var(--text-main)]"
+            className="auth-link-recovery font-medium"
           >
             Iniciar sesión
           </Link>

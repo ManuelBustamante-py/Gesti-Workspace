@@ -1,5 +1,26 @@
 import { supabase } from '../lib/supabase'
 
+export type OAuthProvider = 'google' | 'github'
+
+export async function signInWithOAuthProvider(provider: OAuthProvider) {
+  const redirectUrl = new URL(
+    `${import.meta.env.BASE_URL}dashboard`,
+    window.location.origin,
+  ).toString()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: redirectUrl,
+    },
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
 export async function register(
   email: string,
   password: string,

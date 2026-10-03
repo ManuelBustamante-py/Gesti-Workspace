@@ -207,6 +207,60 @@ textarea:focus {
   text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
 }
 
+.oauth-providers {
+  margin-top: 1.5rem;
+  border-top: 1px solid rgba(166, 180, 184, 0.12);
+  padding-top: 1.25rem;
+}
+
+.oauth-providers-heading {
+  margin: 0 0 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.oauth-providers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.oauth-provider-button {
+  display: flex;
+  min-width: 0;
+  min-height: 5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(166, 180, 184, 0.16);
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.oauth-provider-button:hover:not(:disabled) {
+  border-color: rgba(192, 132, 252, 0.65);
+  background: rgba(192, 132, 252, 0.08);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+
+.oauth-provider-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.oauth-provider-logo {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+}
+
 .alert-error {
   border: 1px solid rgba(255, 107, 107, 0.2);
   background: rgba(255, 107, 107, 0.05);
@@ -387,6 +441,10 @@ textarea:focus {
   .auth-card,
   .profile-card {
     padding: 1.25rem;
+  }
+
+  .oauth-providers-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sidebar {
