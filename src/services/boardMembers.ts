@@ -32,17 +32,33 @@ export interface BoardMember {
 }
 
 export async function getBoardMembers(boardId: string) {
-  const { data, error } = await supabase
-    .from('board_members')
-    .select('*, profile:profiles(username, display_name, avatar_url)')
-    .eq('board_id', boardId)
-    .order('created_at', { ascending: true })
+  const { data, error } = await supabase.rpc('get_board_collaborators', {
+    target_board_id: boardId,
+  })
 
   if (error) {
     throw error
   }
 
-  return data as BoardMember[]
+  const collaborators = (data ?? []) as Array<{
+    id: string
+    board_id: string
+    user_id: string
+    role: BoardMemberRole
+    created_at: string
+    username: string | null
+    display_name: string | null
+    avatar_url: string | null
+  }>
+
+  return collaborators.map((member) => ({
+    ...member,
+    profile: {
+      username: member.username,
+      display_name: member.display_name,
+      avatar_url: member.avatar_url,
+    },
+  })) as BoardMember[]
 }
 
 export async function getBoardInvitations(boardId: string) {

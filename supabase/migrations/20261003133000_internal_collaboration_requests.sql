@@ -191,6 +191,32 @@ grant execute on function public.accept_board_invitation(uuid) to authenticated;
 revoke all on function public.decline_board_invitation(uuid) from public;
 grant execute on function public.decline_board_invitation(uuid) to authenticated;
 
+create or replace function public.get_board_collaborators(target_board_id uuid)
+returns table (
+  id uuid,
+  board_id uuid,
+  user_id uuid,
+  role text,
+  created_at timestamptz,
+  username text,
+  display_name text,
+  avatar_url text
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select member.id, member.board_id, member.user_id, member.role,
+    member.created_at, profile.username, profile.display_name, profile.avatar_url
+  from public.board_members member
+  left join public.profiles profile on profile.id = member.user_id
+  where member.board_id = target_board_id
+    and public.user_can_access_board(target_board_id);
+$$;
+
+revoke all on function public.get_board_collaborators(uuid) from public;
+grant execute on function public.get_board_collaborators(uuid) to authenticated;
+
 create or replace function public.user_can_access_board(target_board_id uuid)
 returns boolean
 language sql stable security definer
@@ -227,43 +253,51 @@ create policy "Board owners and members can view boards"
   using (public.user_can_access_board(id));
 
 drop policy if exists "Owners can view board columns" on public.board_columns;
+drop policy if exists "Owners and members can view board columns" on public.board_columns;
 create policy "Owners and members can view board columns"
   on public.board_columns for select to authenticated
   using (public.user_can_access_board(board_id));
 
 drop policy if exists "Owners can create board columns" on public.board_columns;
+drop policy if exists "Owners and editors can create board columns" on public.board_columns;
 create policy "Owners and editors can create board columns"
   on public.board_columns for insert to authenticated
   with check (public.user_can_edit_board(board_id));
 
 drop policy if exists "Owners can update board columns" on public.board_columns;
+drop policy if exists "Owners and editors can update board columns" on public.board_columns;
 create policy "Owners and editors can update board columns"
   on public.board_columns for update to authenticated
   using (public.user_can_edit_board(board_id))
   with check (public.user_can_edit_board(board_id));
 
 drop policy if exists "Owners can delete board columns" on public.board_columns;
+drop policy if exists "Owners and editors can delete board columns" on public.board_columns;
 create policy "Owners and editors can delete board columns"
   on public.board_columns for delete to authenticated
   using (public.user_can_edit_board(board_id));
 
 drop policy if exists "Owners can view tasks" on public.tasks;
+drop policy if exists "Owners and members can view tasks" on public.tasks;
 create policy "Owners and members can view tasks"
   on public.tasks for select to authenticated
   using (public.user_can_access_column(column_id));
 
 drop policy if exists "Owners can create tasks" on public.tasks;
+drop policy if exists "Owners and editors can create tasks" on public.tasks;
 create policy "Owners and editors can create tasks"
   on public.tasks for insert to authenticated
   with check (public.user_can_edit_board((select board_id from public.board_columns where id = column_id)));
 
 drop policy if exists "Owners can update tasks" on public.tasks;
+drop policy if exists "Owners and editors can update tasks" on public.tasks;
 create policy "Owners and editors can update tasks"
   on public.tasks for update to authenticated
   using (public.user_can_edit_board((select board_id from public.board_columns where id = column_id)))
   with check (public.user_can_edit_board((select board_id from public.board_columns where id = column_id)));
 
 drop policy if exists "Owners can delete tasks" on public.tasks;
+drop policy if exists "Owners and editors can delete tasks" on public.tasks;
 create policy "Owners and editors can delete tasks"
   on public.tasks for delete to authenticated
   using (public.user_can_edit_board((select board_id from public.board_columns where id = column_id)));

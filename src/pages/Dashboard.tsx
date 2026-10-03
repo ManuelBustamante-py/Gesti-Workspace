@@ -2096,9 +2096,17 @@ function Dashboard() {
                     </p>
                     <div className="divide-y divide-white/10">
                       <div className="flex items-center gap-3 py-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-mint)] font-semibold text-[var(--bg-main)]">
-                          {(profile?.display_name ?? user?.email ?? 'Tú').slice(0, 2).toUpperCase()}
-                        </div>
+                        {profile?.avatar_url ? (
+                          <img
+                            src={profile.avatar_url}
+                            alt="Avatar del propietario"
+                            className="h-10 w-10 shrink-0 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-mint)] font-semibold text-[var(--bg-main)]">
+                            {(profile?.display_name ?? user?.email ?? 'Tú').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-white">
                             {profile?.display_name ?? 'Tú'} <span className="text-slate-500">(tú)</span>
@@ -2110,9 +2118,17 @@ function Dashboard() {
 
                       {boardMembers.map((member) => (
                         <div key={member.id} className="flex items-center gap-3 py-4">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-300 font-semibold text-slate-900">
-                            {(member.profile?.display_name ?? member.profile?.username ?? 'U').slice(0, 2).toUpperCase()}
-                          </div>
+                          {member.profile?.avatar_url ? (
+                            <img
+                              src={member.profile.avatar_url}
+                              alt={`Avatar de ${member.profile.display_name ?? member.profile.username ?? 'colaborador'}`}
+                              className="h-10 w-10 shrink-0 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-300 font-semibold text-slate-900">
+                              {(member.profile?.display_name ?? member.profile?.username ?? 'U').slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-medium text-white">
                               {member.profile?.display_name ?? member.profile?.username ?? 'Usuario'}
