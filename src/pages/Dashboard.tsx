@@ -1348,7 +1348,7 @@ function Dashboard() {
               </label>
             </div>
             <p className="mt-2 text-xs text-[var(--text-muted)]">
-              Columnas requeridas: Columna, Tarea, Descripción, Prioridad, Fecha inicio y Fecha fin.
+              Columnas: N° actividad, Columna, Tarea, Descripción, Prioridad, Fecha inicio, Fecha fin y Predecesoras. La columna Predecesoras es opcional, pero permite conectar actividades y calcular la ruta crítica en el Gantt.
             </p>
           </div>
         </section>
