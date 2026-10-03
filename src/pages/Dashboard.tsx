@@ -65,6 +65,40 @@ const defaultBoardForm: BoardFormState = {
   color: '#6366f1',
 }
 
+function parseDateValue(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function formatGanttDate(value: Date) {
+  return value.toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function getGanttTaskProgress(columnName: string) {
+  const normalizedName = columnName.toLowerCase()
+
+  if (
+    normalizedName.includes('complet') ||
+    normalizedName.includes('termin') ||
+    normalizedName.includes('hech')
+  ) {
+    return 100
+  }
+
+  if (
+    normalizedName.includes('progreso') ||
+    normalizedName.includes('curso') ||
+    normalizedName.includes('doing')
+  ) {
+    return 60
+  }
+
+  return 0
+}
+
 function Dashboard() {
   const { user } = useAuth()
 
@@ -111,6 +145,7 @@ function Dashboard() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [importingBoard, setImportingBoard] = useState(false)
   const [boardViewMinimized, setBoardViewMinimized] = useState(false)
+  const [ganttViewOpen, setGanttViewOpen] = useState(false)
 
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
   const [editForm, setEditForm] = useState<BoardFormState>(defaultBoardForm)
@@ -1420,6 +1455,52 @@ function Dashboard() {
                 return null
               }
 
+              const ganttTasks = boardsColumns.flatMap((column) =>
+                (tasksByColumn[column.id] ?? []).map((task) => ({
+                  ...task,
+                  columnName: column.name,
+                  progress: getGanttTaskProgress(column.name),
+                })),
+              )
+              const scheduledTasks = ganttTasks.filter(
+                (task) => task.start_date && task.end_date,
+              )
+              const ganttStart = scheduledTasks.length
+                ? new Date(
+                    Math.min(
+                      ...scheduledTasks.map((task) =>
+                        parseDateValue(task.start_date as string).getTime(),
+                      ),
+                    ),
+                  )
+                : null
+              const ganttEnd = scheduledTasks.length
+                ? new Date(
+                    Math.max(
+                      ...scheduledTasks.map((task) =>
+                        parseDateValue(task.end_date as string).getTime(),
+                      ),
+                    ),
+                  )
+                : null
+              const ganttDays =
+                ganttStart && ganttEnd
+                  ? Array.from(
+                      {
+                        length:
+                          Math.round(
+                            (ganttEnd.getTime() - ganttStart.getTime()) /
+                              86400000,
+                          ) + 1,
+                      },
+                      (_, index) => {
+                        const day = new Date(ganttStart)
+                        day.setDate(day.getDate() + index)
+                        return day
+                      },
+                    )
+                  : []
+
               return (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1437,6 +1518,18 @@ function Dashboard() {
                     <div className="flex flex-wrap items-center justify-end gap-3">
                       <button
                         type="button"
+                        onClick={() => setGanttViewOpen((isOpen) => !isOpen)}
+                        className={`text-sm font-medium transition ${
+                          ganttViewOpen
+                            ? 'text-[var(--accent-mint)]'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                        aria-expanded={ganttViewOpen}
+                      >
+                        {ganttViewOpen ? 'Ocultar diagrama Gantt' : 'Diagrama Gantt'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleToggleBoardView}
                         className="text-sm font-medium text-slate-300 transition hover:text-white"
                         aria-expanded={!boardViewMinimized}
@@ -1452,6 +1545,133 @@ function Dashboard() {
                       </button>
                     </div>
                   </div>
+
+                  {ganttViewOpen && (
+                    <div className="mt-6 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4">
+                        <div>
+                          <h3 className="text-base font-semibold text-white">
+                            Cronograma del tablero
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Visualiza la duración y el avance de tus actividades.
+                          </p>
+                        </div>
+                        {ganttStart && ganttEnd && (
+                          <span className="text-xs text-slate-400">
+                            {formatGanttDate(ganttStart)} - {formatGanttDate(ganttEnd)}
+                          </span>
+                        )}
+                      </div>
+
+                      {scheduledTasks.length === 0 ? (
+                        <div className="px-4 py-10 text-center text-sm text-slate-400">
+                          Añade fechas de inicio y fin a tus tareas para verlas en el diagrama Gantt.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <div
+                            className="min-w-[760px]"
+                            style={{
+                              gridTemplateColumns: `minmax(220px, 0.8fr) repeat(${ganttDays.length}, minmax(34px, 1fr))`,
+                            }}
+                          >
+                            <div className="grid grid-cols-[minmax(220px,0.8fr)_1fr] border-b border-white/10 bg-white/[0.03]">
+                              <div className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                Tarea
+                              </div>
+                              <div
+                                className="grid"
+                                style={{
+                                  gridTemplateColumns: `repeat(${ganttDays.length}, minmax(34px, 1fr))`,
+                                }}
+                              >
+                                {ganttDays.map((day) => (
+                                  <div
+                                    key={day.toISOString()}
+                                    className="border-l border-white/5 px-1 py-3 text-center text-[10px] text-slate-500"
+                                  >
+                                    {day.getDate()}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {scheduledTasks.map((task) => {
+                              const startOffset = Math.round(
+                                (parseDateValue(task.start_date as string).getTime() -
+                                  (ganttStart as Date).getTime()) /
+                                  86400000,
+                              )
+                              const duration =
+                                Math.round(
+                                  (parseDateValue(task.end_date as string).getTime() -
+                                    parseDateValue(task.start_date as string).getTime()) /
+                                    86400000,
+                                ) + 1
+                              const barColor =
+                                task.progress === 100
+                                  ? 'bg-emerald-400'
+                                  : task.progress > 0
+                                    ? 'bg-sky-400'
+                                    : task.priority === 'high'
+                                      ? 'bg-rose-400'
+                                      : 'bg-slate-500'
+
+                              return (
+                                <div
+                                  key={task.id}
+                                  className="grid min-h-14 border-b border-white/10"
+                                  style={{
+                                    gridTemplateColumns: `minmax(220px, 0.8fr) repeat(${ganttDays.length}, minmax(34px, 1fr))`,
+                                  }}
+                                >
+                                  <div className="min-w-0 px-4 py-3">
+                                    <p className="truncate text-sm font-medium text-white">
+                                      {task.title}
+                                    </p>
+                                    <p className="truncate text-[11px] text-slate-500">
+                                      {task.columnName}
+                                    </p>
+                                  </div>
+                                  <div
+                                    className="relative grid items-center"
+                                    style={{
+                                      gridTemplateColumns: `repeat(${ganttDays.length}, minmax(34px, 1fr))`,
+                                    }}
+                                  >
+                                    {ganttDays.map((day) => (
+                                      <span
+                                        key={day.toISOString()}
+                                        className="h-full border-l border-white/5"
+                                      />
+                                    ))}
+                                    <div
+                                      className={`absolute z-10 flex h-7 items-center overflow-hidden rounded-md px-2 text-[11px] font-semibold text-slate-950 shadow-sm ${barColor}`}
+                                      style={{
+                                        left: `calc(${startOffset} * (100% / ${ganttDays.length}) + 4px)`,
+                                        width: `calc(${duration} * (100% / ${ganttDays.length}) - 8px)`,
+                                      }}
+                                      title={`${task.start_date} → ${task.end_date}`}
+                                    >
+                                      <span className="truncate">{task.progress}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-4 border-t border-white/10 px-4 py-3 text-[11px] text-slate-400">
+                        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-emerald-400" />Completada</span>
+                        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-sky-400" />En progreso</span>
+                        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-slate-500" />Pendiente</span>
+                        <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-rose-400" />Prioridad alta</span>
+                      </div>
+                    </div>
+                  )}
 
                   {!boardViewMinimized && (
                     <>
