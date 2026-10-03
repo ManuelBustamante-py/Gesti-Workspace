@@ -5,11 +5,17 @@ export type BoardMemberRole = 'viewer' | 'editor'
 export interface BoardInvitation {
   id: string
   board_id: string
+  recipient_id: string | null
   email: string
   role: BoardMemberRole
   status: 'pending' | 'accepted' | 'declined'
   token: string
   created_at: string
+  board?: {
+    name: string
+    color: string
+    owner_id: string
+  } | null
 }
 
 export interface BoardMember {
@@ -64,19 +70,50 @@ export async function inviteBoardMember(
     throw new Error('Indica un correo electrónico válido.')
   }
 
-  const { data, error } = await supabase
-    .from('board_invitations')
-    .upsert(
-      {
-        board_id: boardId,
-        email: trimmedEmail,
-        role,
-        status: 'pending',
-      },
-      { onConflict: 'board_id,email' },
-    )
-    .select()
-    .single()
+  const { data, error } = await supabase.rpc('invite_board_member', {
+    target_board_id: boardId,
+    target_email: trimmedEmail,
+    target_role: role,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data as BoardInvitation
+}
+
+export async function getReceivedBoardInvitations() {
+  const { data, error } = await supabase.rpc('get_received_board_invitations')
+
+  if (error) {
+    throw error
+  }
+
+  return (data as Array<BoardInvitation & {
+    board_name: string
+    board_color: string
+  }>).map((invitation) => ({
+    ...invitation,
+    board: {
+      name: invitation.board_name,
+      color: invitation.board_color,
+      owner_id: '',
+    },
+  }))
+}
+
+export async function respondToBoardInvitation(
+  invitationId: string,
+  response: 'accept' | 'decline',
+) {
+  const functionName =
+    response === 'accept'
+      ? 'accept_board_invitation'
+      : 'decline_board_invitation'
+  const { data, error } = await supabase.rpc(functionName, {
+    invitation_id: invitationId,
+  })
 
   if (error) {
     throw error

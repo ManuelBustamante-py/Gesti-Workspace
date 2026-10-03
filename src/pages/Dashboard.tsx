@@ -32,7 +32,9 @@ import Column from '../components/board/Column'
 import {
   getBoardInvitations,
   getBoardMembers,
+  getReceivedBoardInvitations,
   inviteBoardMember,
+  respondToBoardInvitation,
   type BoardInvitation,
   type BoardMember,
   type BoardMemberRole,
@@ -89,9 +91,11 @@ function Dashboard() {
   const [editingTask, setEditingTask] = useState<EditingTaskState | null>(null)
   const [savingTask, setSavingTask] = useState(false)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
-  const [activeView, setActiveView] = useState<'boards' | 'create'>('boards')
+  const [activeView, setActiveView] = useState<'boards' | 'create' | 'requests'>('boards')
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([])
   const [boardInvitations, setBoardInvitations] = useState<BoardInvitation[]>([])
+  const [receivedInvitations, setReceivedInvitations] = useState<BoardInvitation[]>([])
+  const [respondingInvitationId, setRespondingInvitationId] = useState<string | null>(null)
   const [memberEmail, setMemberEmail] = useState('')
   const [memberRole, setMemberRole] = useState<BoardMemberRole>('viewer')
   const [invitingMember, setInvitingMember] = useState(false)
@@ -101,6 +105,7 @@ function Dashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [importingBoard, setImportingBoard] = useState(false)
+  const [boardViewMinimized, setBoardViewMinimized] = useState(false)
 
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
   const [editForm, setEditForm] = useState<BoardFormState>(defaultBoardForm)
@@ -144,6 +149,18 @@ function Dashboard() {
     }
 
     loadCurrentProfile()
+  }, [user])
+
+  useEffect(() => {
+    async function loadReceivedInvitations() {
+      try {
+        setReceivedInvitations(await getReceivedBoardInvitations())
+      } catch (err) {
+        console.error('Error al cargar solicitudes de colaboración:', err)
+      }
+    }
+
+    loadReceivedInvitations()
   }, [user])
 
   useEffect(() => {
@@ -263,11 +280,35 @@ function Dashboard() {
     setEditingColumnName('')
     setEditingTask(null)
     setColumnError('')
+    setBoardViewMinimized(false)
   }
 
   function handleCloseBoardDetail() {
     setSelectedBoardId(null)
+    setBoardViewMinimized(false)
     window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  async function handleInvitationResponse(
+    invitationId: string,
+    response: 'accept' | 'decline',
+  ) {
+    try {
+      setRespondingInvitationId(invitationId)
+      await respondToBoardInvitation(invitationId, response)
+      setReceivedInvitations((current) =>
+        current.filter((invitation) => invitation.id !== invitationId),
+      )
+    } catch (err) {
+      console.error('Error al responder solicitud de colaboración:', err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo responder la solicitud.',
+      )
+    } finally {
+      setRespondingInvitationId(null)
+    }
   }
 
   async function handleInviteMember(event: FormEvent<HTMLFormElement>) {
@@ -808,6 +849,17 @@ function Dashboard() {
             <span aria-hidden="true">＋ </span>
             <span className="sidebar-label">Crear tablero</span>
           </button>
+          <button type="button" title="Solicitudes" onClick={() => { setActiveView('requests'); handleCloseBoardDetail(); setMobileMenuOpen(false) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${activeView === 'requests' ? 'bg-[rgba(166,180,184,0.1)] text-[var(--accent-ui)]' : 'text-[var(--text-muted)] hover:bg-white/5'}`}>
+            <span>
+              <span aria-hidden="true">♢ </span>
+              <span className="sidebar-label">Solicitudes</span>
+            </span>
+            {receivedInvitations.length > 0 && (
+              <span className="rounded-full bg-[var(--priority-medium)]/20 px-2 py-0.5 text-xs text-[var(--priority-medium)]">
+                {receivedInvitations.length}
+              </span>
+            )}
+          </button>
         </nav>
         <div className="mt-8 border-t border-slate-800 pt-6">
           <div
@@ -842,6 +894,8 @@ function Dashboard() {
                 ? `#${boards.find((board) => board.id === selectedBoardId)?.name ?? 'Tablero'}`
                 : activeView === 'create'
                   ? 'Crear tablero'
+                  : activeView === 'requests'
+                    ? 'Solicitudes de colaboración'
                   : 'Mis tableros'}
             </h1>
 
@@ -954,6 +1008,71 @@ function Dashboard() {
         </section>
         )}
 
+        {activeView === 'requests' && (
+          <section className="glass-panel mt-8 rounded-2xl p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  Solicitudes de colaboración
+                </h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Revisa las invitaciones recibidas para participar en otros tableros.
+                </p>
+              </div>
+              <span className="rounded-full bg-[var(--accent-mint)]/10 px-3 py-1 text-xs text-[var(--accent-mint)]">
+                {receivedInvitations.length} pendiente{receivedInvitations.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {receivedInvitations.length === 0 ? (
+              <p className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-400">
+                No tienes solicitudes pendientes.
+              </p>
+            ) : (
+              <div className="mt-6 grid gap-3">
+                {receivedInvitations.map((invitation) => (
+                  <article
+                    key={invitation.id}
+                    className="rounded-xl border border-white/10 bg-black/20 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-medium text-white">
+                          {invitation.board?.name ?? 'Tablero compartido'}
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Te invitaron como {invitation.role === 'editor' ? 'editor' : 'lector'}.
+                        </p>
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        {new Date(invitation.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleInvitationResponse(invitation.id, 'decline')}
+                        disabled={respondingInvitationId === invitation.id}
+                        className="btn-ghost px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Rechazar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInvitationResponse(invitation.id, 'accept')}
+                        disabled={respondingInvitationId === invitation.id}
+                        className="btn-mint-primary px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {respondingInvitationId === invitation.id ? 'Guardando...' : 'Aceptar'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {activeView === 'boards' && !selectedBoardId && (
         <section id="boards" className="mt-8">
           <h2 className="text-xl font-semibold text-white">
@@ -1049,7 +1168,7 @@ function Dashboard() {
 
               return (
                 <>
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div
                         className="h-4 w-4 rounded-full"
@@ -1061,16 +1180,28 @@ function Dashboard() {
                       </h2>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleCloseBoardDetail}
-                      className="text-sm font-medium text-slate-300 transition hover:text-white"
-                    >
-                      Cerrar vista
-                    </button>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setBoardViewMinimized((isMinimized) => !isMinimized)}
+                        className="text-sm font-medium text-slate-300 transition hover:text-white"
+                        aria-expanded={!boardViewMinimized}
+                      >
+                        {boardViewMinimized ? 'Restaurar vista' : 'Minimizar vista'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCloseBoardDetail}
+                        className="text-sm font-medium text-slate-300 transition hover:text-white"
+                      >
+                        Cerrar vista
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="glass-panel mt-5 rounded-xl p-4">
+                  {!boardViewMinimized && (
+                    <>
+                    <div className="glass-panel mt-5 rounded-xl p-4">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <h3 className="text-lg font-medium text-white">
@@ -1200,6 +1331,8 @@ function Dashboard() {
                       </button>
                     </form>
                   </div>
+                    </>
+                  )}
 
                   {columnError && (
                     <div className="alert-error mt-4 rounded-lg p-3 text-sm">
