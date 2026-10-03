@@ -11,7 +11,7 @@ interface ColumnProps {
   editingColumn: boolean
   editingColumnName: string
   savingColumn: boolean
-  taskDraft: { title: string; priority: TaskPriority; dueDate: string }
+  taskDraft: { title: string; priority: TaskPriority; startDate: string; endDate: string }
   creatingTask: boolean
   editingTask: EditingTaskState | null
   savingTask: boolean
@@ -122,7 +122,8 @@ function Column({
             <option value="medium">Media</option>
             <option value="high">Alta</option>
           </select>
-          <input type="date" value={taskDraft.dueDate} onChange={(event) => onTaskDraftChange({ dueDate: event.target.value })} className="control-input min-w-0 flex-1 rounded-lg px-2 py-2 text-sm" />
+          <input type="date" value={taskDraft.startDate} onChange={(event) => onTaskDraftChange({ startDate: event.target.value })} className="control-input min-w-0 flex-1 rounded-lg px-2 py-2 text-sm" aria-label="Fecha de inicio" />
+          <input type="date" value={taskDraft.endDate} onChange={(event) => onTaskDraftChange({ endDate: event.target.value })} className="control-input min-w-0 flex-1 rounded-lg px-2 py-2 text-sm" aria-label="Fecha de fin" />
         </div>
       </form>
 

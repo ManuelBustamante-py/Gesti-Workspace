@@ -49,6 +49,7 @@ import {
   readBoardWorkbook,
   type ImportedBoard,
 } from '../services/boardWorkbook'
+import { exportBoardProjectXml } from '../services/boardGantt'
 
 type BoardFormState = {
   name: string
@@ -85,7 +86,7 @@ function Dashboard() {
   const [savingColumn, setSavingColumn] = useState(false)
   const [columnError, setColumnError] = useState('')
   const [taskDrafts, setTaskDrafts] = useState<
-    Record<string, { title: string; priority: TaskPriority; dueDate: string }>
+    Record<string, { title: string; priority: TaskPriority; startDate: string; endDate: string }>
   >({})
   const [creatingTaskIds, setCreatingTaskIds] = useState<Record<string, boolean>>({})
   const [editingTask, setEditingTask] = useState<EditingTaskState | null>(null)
@@ -111,6 +112,18 @@ function Dashboard() {
   const [editForm, setEditForm] = useState<BoardFormState>(defaultBoardForm)
   const [savingBoard, setSavingBoard] = useState(false)
   const [editError, setEditError] = useState('')
+
+  useEffect(() => {
+    if (!selectedBoardId) {
+      setBoardViewMinimized(false)
+      return
+    }
+
+    const savedMinimizedState = window.localStorage.getItem(
+      `gesti:board-view-minimized:${selectedBoardId}`,
+    )
+    setBoardViewMinimized(savedMinimizedState === 'true')
+  }, [selectedBoardId])
 
   useEffect(() => {
     async function loadBoards() {
@@ -280,13 +293,26 @@ function Dashboard() {
     setEditingColumnName('')
     setEditingTask(null)
     setColumnError('')
-    setBoardViewMinimized(false)
   }
 
   function handleCloseBoardDetail() {
     setSelectedBoardId(null)
-    setBoardViewMinimized(false)
     window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  function handleToggleBoardView() {
+    if (!selectedBoardId) {
+      return
+    }
+
+    setBoardViewMinimized((isMinimized) => {
+      const nextValue = !isMinimized
+      window.localStorage.setItem(
+        `gesti:board-view-minimized:${selectedBoardId}`,
+        String(nextValue),
+      )
+      return nextValue
+    })
   }
 
   async function handleInvitationResponse(
@@ -448,7 +474,8 @@ function Dashboard() {
     const draft = taskDrafts[columnId] ?? {
       title: '',
       priority: 'medium' as TaskPriority,
-      dueDate: '',
+      startDate: '',
+      endDate: '',
     }
     const title = draft.title.trim()
 
@@ -469,7 +496,8 @@ function Dashboard() {
         title,
         undefined,
         draft.priority,
-        draft.dueDate || null,
+        draft.startDate || null,
+        draft.endDate || null,
       )
 
       setTasksByColumn((currentTasks) => ({
@@ -482,7 +510,8 @@ function Dashboard() {
         [columnId]: {
           title: '',
           priority: 'medium',
-          dueDate: '',
+          startDate: '',
+          endDate: '',
         },
       }))
     } catch (err) {
@@ -507,7 +536,8 @@ function Dashboard() {
       title: task.title,
       description: task.description ?? '',
       priority: task.priority,
-      dueDate: task.due_date ?? '',
+      startDate: task.start_date ?? '',
+      endDate: task.end_date ?? '',
     })
     setColumnError('')
   }
@@ -532,7 +562,8 @@ function Dashboard() {
         editingTask.title,
         editingTask.description,
         editingTask.priority,
-        editingTask.dueDate || null,
+        editingTask.startDate || null,
+        editingTask.endDate || null,
       )
 
       setTasksByColumn((currentTasks) => ({
@@ -679,7 +710,8 @@ function Dashboard() {
           importedTask.title,
           importedTask.description,
           importedTask.priority,
-          importedTask.dueDate,
+          importedTask.startDate,
+          importedTask.endDate,
         )
       }
     }
@@ -715,6 +747,21 @@ function Dashboard() {
     } catch (err) {
       console.error('Error al exportar tablero:', err)
       setError(err instanceof Error ? err.message : 'No se pudo exportar el tablero.')
+    }
+
+  }
+
+  async function handleExportProject(board: Board) {
+    try {
+      setError('')
+      const columns = await ensureBoardColumns(board.id)
+      const taskEntries = await Promise.all(
+        columns.map(async (column) => [column.id, await getColumnTasks(column.id)] as const),
+      )
+      exportBoardProjectXml(board, columns, Object.fromEntries(taskEntries))
+    } catch (err) {
+      console.error('Error al exportar cronograma:', err)
+      setError(err instanceof Error ? err.message : 'No se pudo exportar el cronograma.')
     }
   }
 
@@ -1002,7 +1049,7 @@ function Dashboard() {
               </label>
             </div>
             <p className="mt-2 text-xs text-[var(--text-muted)]">
-              Columnas requeridas: Columna, Tarea, Descripción, Prioridad y Fecha vencimiento.
+              Columnas requeridas: Columna, Tarea, Descripción, Prioridad, Fecha inicio y Fecha fin.
             </p>
           </div>
         </section>
@@ -1146,6 +1193,13 @@ function Dashboard() {
                       >
                         Descargar XLS
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportProject(board)}
+                        className="btn-ghost px-3 py-1 text-sm"
+                      >
+                        Exportar Project XML
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -1183,7 +1237,7 @@ function Dashboard() {
                     <div className="flex flex-wrap items-center justify-end gap-3">
                       <button
                         type="button"
-                        onClick={() => setBoardViewMinimized((isMinimized) => !isMinimized)}
+                        onClick={handleToggleBoardView}
                         className="text-sm font-medium text-slate-300 transition hover:text-white"
                         aria-expanded={!boardViewMinimized}
                       >
@@ -1371,7 +1425,8 @@ function Dashboard() {
                               taskDraft={taskDrafts[column.id] ?? {
                                 title: '',
                                 priority: 'medium',
-                                dueDate: '',
+                                startDate: '',
+                                endDate: '',
                               }}
                               creatingTask={creatingTaskIds[column.id] ?? false}
                               editingTask={editingTask}
@@ -1392,7 +1447,8 @@ function Dashboard() {
                                     title: currentDrafts[column.id]?.title ?? '',
                                     priority:
                                       currentDrafts[column.id]?.priority ?? 'medium',
-                                    dueDate: currentDrafts[column.id]?.dueDate ?? '',
+                                    startDate: currentDrafts[column.id]?.startDate ?? '',
+                                    endDate: currentDrafts[column.id]?.endDate ?? '',
                                     ...changes,
                                   },
                                 }))
@@ -1485,8 +1541,10 @@ function Dashboard() {
                                           priority:
                                             currentDrafts[column.id]?.priority ??
                                             'medium',
-                                          dueDate:
-                                            currentDrafts[column.id]?.dueDate ?? '',
+                                          startDate:
+                                            currentDrafts[column.id]?.startDate ?? '',
+                                          endDate:
+                                            currentDrafts[column.id]?.endDate ?? '',
                                         },
                                       }))
                                     }
@@ -1517,8 +1575,10 @@ function Dashboard() {
                                             currentDrafts[column.id]?.title ?? '',
                                           priority: event.target
                                             .value as TaskPriority,
-                                          dueDate:
-                                            currentDrafts[column.id]?.dueDate ?? '',
+                                          startDate:
+                                            currentDrafts[column.id]?.startDate ?? '',
+                                          endDate:
+                                            currentDrafts[column.id]?.endDate ?? '',
                                         },
                                       }))
                                     }
@@ -1531,7 +1591,7 @@ function Dashboard() {
 
                                   <input
                                     type="date"
-                                    value={taskDrafts[column.id]?.dueDate ?? ''}
+                                    value={taskDrafts[column.id]?.startDate ?? ''}
                                     onChange={(event) =>
                                       setTaskDrafts((currentDrafts) => ({
                                         ...currentDrafts,
@@ -1541,11 +1601,30 @@ function Dashboard() {
                                           priority:
                                             currentDrafts[column.id]?.priority ??
                                             'medium',
-                                          dueDate: event.target.value,
+                                          startDate: event.target.value,
+                                          endDate:
+                                            currentDrafts[column.id]?.endDate ?? '',
                                         },
                                       }))
                                     }
                                     className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={taskDrafts[column.id]?.endDate ?? ''}
+                                    onChange={(event) =>
+                                      setTaskDrafts((currentDrafts) => ({
+                                        ...currentDrafts,
+                                        [column.id]: {
+                                          title: currentDrafts[column.id]?.title ?? '',
+                                          priority: currentDrafts[column.id]?.priority ?? 'medium',
+                                          startDate: currentDrafts[column.id]?.startDate ?? '',
+                                          endDate: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                                    aria-label="Fecha de fin"
                                   />
                                 </div>
 
@@ -1635,18 +1714,29 @@ function Dashboard() {
 
                                               <input
                                                 type="date"
-                                                value={editingTask.dueDate}
+                                                value={editingTask.startDate}
                                                 onChange={(event) =>
                                                   setEditingTask((currentTask) =>
                                                     currentTask
-                                                      ? {
-                                                          ...currentTask,
-                                                          dueDate: event.target.value,
-                                                        }
+                                                      ? { ...currentTask, startDate: event.target.value }
                                                       : currentTask,
                                                   )
                                                 }
                                                 className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                                                aria-label="Fecha de inicio"
+                                              />
+                                              <input
+                                                type="date"
+                                                value={editingTask.endDate}
+                                                onChange={(event) =>
+                                                  setEditingTask((currentTask) =>
+                                                    currentTask
+                                                      ? { ...currentTask, endDate: event.target.value }
+                                                      : currentTask,
+                                                  )
+                                                }
+                                                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                                                aria-label="Fecha de fin"
                                               />
                                             </div>
 
@@ -1692,9 +1782,9 @@ function Dashboard() {
                                                     : 'media'}
                                               </span>
 
-                                              {task.due_date && (
+                                              {(task.start_date || task.end_date) && (
                                                 <span className="rounded-full border border-white/5 bg-black/20 px-2 py-1 text-[var(--text-muted)]">
-                                                  Vence: {task.due_date}
+                                                  {task.start_date ?? 'Sin inicio'} → {task.end_date ?? 'Sin fin'}
                                                 </span>
                                               )}
                                             </div>

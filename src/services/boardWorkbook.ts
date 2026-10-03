@@ -9,7 +9,9 @@ export type WorkbookTaskRow = {
   Tarea: string
   Descripción: string
   Prioridad: string
-  'Fecha vencimiento': string
+  'Fecha inicio': string
+  'Fecha fin': string
+  'Fecha vencimiento'?: string
 }
 
 export type ImportedBoard = {
@@ -22,7 +24,8 @@ export type ImportedBoard = {
       title: string
       description: string
       priority: TaskPriority
-      dueDate: string | null
+      startDate: string | null
+      endDate: string | null
     }>
   }>
 }
@@ -70,26 +73,29 @@ export function downloadBoardTemplate() {
       Tarea: 'Ejemplo: definir alcance',
       Descripción: 'Reemplaza esta fila o elimínala.',
       Prioridad: 'Media',
-      'Fecha vencimiento': '2026-12-31',
+      'Fecha inicio': '2026-12-01',
+      'Fecha fin': '2026-12-31',
     },
     {
       Columna: 'En progreso',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
-      'Fecha vencimiento': '',
+      'Fecha inicio': '',
+      'Fecha fin': '',
     },
     {
       Columna: 'Completado',
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
-      'Fecha vencimiento': '',
+      'Fecha inicio': '',
+      'Fecha fin': '',
     },
   ]
   const sheet = XLSX.utils.json_to_sheet(rows)
-  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 20 }]
-  ;['A1', 'B1', 'C1', 'D1', 'E1'].forEach((cell) => {
+  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1'].forEach((cell) => {
     sheet[cell].s = headerStyle
   })
   rows.slice(0, 3).forEach((row, index) => {
@@ -111,7 +117,8 @@ export function exportBoardWorkbook(
       Tarea: task.title,
       Descripción: task.description ?? '',
       Prioridad: task.priority === 'high' ? 'Alta' : task.priority === 'low' ? 'Baja' : 'Media',
-      'Fecha vencimiento': task.due_date ?? '',
+      'Fecha inicio': task.start_date ?? '',
+      'Fecha fin': task.end_date ?? '',
     })),
   )
   const exportRows = rows.length > 0
@@ -121,11 +128,12 @@ export function exportBoardWorkbook(
       Tarea: '',
       Descripción: '',
       Prioridad: 'Media',
-      'Fecha vencimiento': '',
+      'Fecha inicio': '',
+      'Fecha fin': '',
     }))
   const sheet = XLSX.utils.json_to_sheet(exportRows)
-  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 20 }]
-  ;['A1', 'B1', 'C1', 'D1', 'E1'].forEach((cell) => {
+  sheet['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 48 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1'].forEach((cell) => {
     sheet[cell].s = headerStyle
   })
   exportRows.forEach((row, index) => {
@@ -164,7 +172,8 @@ export async function readBoardWorkbook(file: File): Promise<ImportedBoard> {
       title,
       description: String(row.Descripción ?? '').trim(),
       priority: priorityFromValue(row.Prioridad),
-      dueDate: normalizeDate(row['Fecha vencimiento']),
+      startDate: normalizeDate(row['Fecha inicio']),
+      endDate: normalizeDate(row['Fecha fin']) ?? normalizeDate(row['Fecha vencimiento']),
     })
     taskCount += 1
     grouped.set(columnName, column)

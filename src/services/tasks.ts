@@ -8,7 +8,8 @@ export interface Task {
   title: string
   description: string | null
   priority: TaskPriority
-  due_date: string | null
+  start_date: string | null
+  end_date: string | null
   position: number
   created_at: string
   updated_at: string
@@ -34,12 +35,16 @@ export async function createTask(
   title: string,
   description?: string,
   priority: TaskPriority = 'medium',
-  dueDate?: string | null,
+  startDate?: string | null,
+  endDate?: string | null,
 ) {
   const trimmedTitle = title.trim()
 
   if (!trimmedTitle) {
     throw new Error('La tarea debe tener un título.')
+  }
+  if (startDate && endDate && startDate > endDate) {
+    throw new Error('La fecha de inicio no puede ser posterior a la fecha de fin.')
   }
 
   const { data: existingTasks, error: tasksError } = await supabase
@@ -64,7 +69,8 @@ export async function createTask(
       title: trimmedTitle,
       description: description?.trim() || null,
       priority,
-      due_date: dueDate || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
       position,
     })
     .select()
@@ -82,12 +88,16 @@ export async function updateTask(
   title: string,
   description?: string,
   priority: TaskPriority = 'medium',
-  dueDate?: string | null,
+  startDate?: string | null,
+  endDate?: string | null,
 ) {
   const trimmedTitle = title.trim()
 
   if (!trimmedTitle) {
     throw new Error('La tarea debe tener un título.')
+  }
+  if (startDate && endDate && startDate > endDate) {
+    throw new Error('La fecha de inicio no puede ser posterior a la fecha de fin.')
   }
 
   const { data, error } = await supabase
@@ -96,7 +106,8 @@ export async function updateTask(
       title: trimmedTitle,
       description: description?.trim() || null,
       priority,
-      due_date: dueDate || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
