@@ -19,11 +19,11 @@ function projectDate(value: string) {
   return `${value}T08:00:00`
 }
 
-function durationInProjectMinutes(start: string, finish: string) {
+function durationInProjectDays(start: string, finish: string) {
   const startTime = new Date(`${start}T00:00:00`).getTime()
   const finishTime = new Date(`${finish}T00:00:00`).getTime()
   const elapsedDays = Math.round((finishTime - startTime) / 86400000)
-  return Math.max(480, elapsedDays * 480)
+  return Math.max(1, elapsedDays)
 }
 
 export function exportBoardProjectXml(
@@ -38,14 +38,14 @@ export function exportBoardProjectXml(
   const scheduledTasks = tasks.map(({ task, column }) => {
     const start = task.start_date ?? task.end_date ?? fallbackDate
     const finish = task.end_date ?? task.start_date ?? fallbackDate
-    const durationMinutes = durationInProjectMinutes(start, finish)
+    const durationDays = durationInProjectDays(start, finish)
     const status = column.name.toLowerCase().includes('complet') ? 100 : 0
     return {
       task,
       column,
       start,
       finish,
-      durationMinutes,
+      durationDays,
       status,
     }
   })
@@ -59,7 +59,7 @@ export function exportBoardProjectXml(
   )
   const taskUids = new Map(scheduledTasks.map(({ task }, index) => [task.id, index + 1]))
   const projectTasks = scheduledTasks.map(
-    ({ task, column, start, finish, durationMinutes, status }, index) => {
+    ({ task, column, start, finish, durationDays, status }, index) => {
       const predecessorLinks = (task.predecessor_ids ?? [])
         .map((predecessorId) => taskUids.get(predecessorId))
         .filter((uid): uid is number => uid !== undefined)
@@ -69,7 +69,7 @@ export function exportBoardProjectXml(
         )
         .join('')
 
-      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>1</Manual><Type>1</Type><IsNull>0</IsNull><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationMinutes}M</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
+      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
     },
   ).join('')
 
