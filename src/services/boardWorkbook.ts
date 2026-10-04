@@ -239,72 +239,132 @@ export function exportBoardGanttWorkbook(
   const criticalIds = ganttCriticalIds(taskList)
   const activityNumbers = new Map(allTasks.map(({ task }, index) => [task.id, index + 1]))
   const firstDate = tasks.length
-    ? localDate(tasks[0].task.start_date as string)
+    ? localDate(tasks.reduce(
+        (earliest, item) => (item.task.start_date! < earliest ? item.task.start_date! : earliest),
+        tasks[0].task.start_date as string,
+      ))
     : new Date()
+  firstDate.setDate(firstDate.getDate() - ((firstDate.getDay() + 6) % 7))
   const lastDate = tasks.length
     ? localDate(tasks.reduce(
         (latest, item) => (item.task.end_date! > latest ? item.task.end_date! : latest),
         tasks[0].task.end_date as string,
       ))
-    : firstDate
+    : new Date(firstDate)
+  const minimumTimelineEnd = new Date(firstDate)
+  minimumTimelineEnd.setDate(minimumTimelineEnd.getDate() + 55)
+  if (lastDate < minimumTimelineEnd) {
+    lastDate.setTime(minimumTimelineEnd.getTime())
+  }
   const dates: Date[] = []
   for (const date = new Date(firstDate); date <= lastDate; date.setDate(date.getDate() + 1)) {
     dates.push(new Date(date))
   }
 
-  const baseRows = tasks.map(({ task, column }) => ({
-    'N° Tarea': activityNumbers.get(task.id) ?? '',
-    Tarea: task.title,
-    Columna: column.name,
-    'Fecha inicio': task.start_date ?? '',
-    'Fecha fin': task.end_date ?? '',
-    Duración: Math.max(
+  const progressForColumn = (name: string) => {
+    const status = columnStatus(name)
+    return status === 'complete' ? 100 : status === 'progress' ? 60 : 0
+  }
+  const displayDate = (value: string) => {
+    const [year, month, day] = value.split('-')
+    return `${day}-${month}-${year.slice(2)}`
+  }
+  const ganttRows: unknown[][] = [
+    [`GANTT DEL PROYECTO: ${board.name}`],
+    [],
+    ['Inicio del proyecto:', '', '', displayDate(firstDate.toISOString().slice(0, 10))],
+    ['Semana para mostrar:', '', '', 1],
+    ['', '', '', '', '', '', '', '', ...dates.map((date) =>
+      date.getDay() === 1
+        ? date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+        : '',
+    )],
+    ['', '', '', '', '', '', '', '', ...dates.map((date) => date.getDate())],
+    ['', '', '', '', '', '', '', '', ...dates.map((date) =>
+      date.toLocaleDateString('es-ES', { weekday: 'short' }).slice(0, 1).toLowerCase(),
+    )],
+    ['', 'TAREA', 'ASIGNADO A', 'PROGRESO', 'INICIO', 'FIN', 'PREDECESORAS', 'DÍAS', ...dates.map(() => '')],
+  ]
+
+  tasks.forEach(({ task, column }) => {
+    const duration = Math.max(
       1,
       Math.round(
         (localDate(task.end_date as string).getTime() -
           localDate(task.start_date as string).getTime()) / 86400000,
       ) + 1,
-    ),
-    Predecesoras: (task.predecessor_ids ?? [])
+    )
+    const predecessorNumbers = (task.predecessor_ids ?? [])
       .map((id) => activityNumbers.get(id))
       .filter((number): number is number => number !== undefined)
-      .join(', '),
-    'Ruta crítica': criticalIds.has(task.id) ? 'Sí' : 'No',
-    ...Object.fromEntries(
-      dates.map((date) => {
+      .join(', ')
+    ganttRows.push([
+      '',
+      task.title,
+      column.name,
+      progressForColumn(column.name),
+      displayDate(task.start_date as string),
+      displayDate(task.end_date as string),
+      predecessorNumbers,
+      duration,
+      ...dates.map((date) => {
         const key = dateKey(date)
-        const active = key >= (task.start_date as string) && key <= (task.end_date as string)
-        return [key, active ? '■' : '']
+        return key >= (task.start_date as string) && key <= (task.end_date as string) ? ' ' : ''
       }),
-    ),
-  }))
-  const ganttSheet = XLSX.utils.json_to_sheet(baseRows)
-  const baseHeaders = ['N° Tarea', 'Tarea', 'Columna', 'Fecha inicio', 'Fecha fin', 'Duración', 'Predecesoras', 'Ruta crítica']
-  const headers = [...baseHeaders, ...dates.map(dateKey)]
-  ganttSheet['!cols'] = [
-    { wch: 11 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
-    { wch: 10 }, { wch: 16 }, { wch: 14 },
-    ...dates.map(() => ({ wch: 4 })),
-  ]
-  headers.forEach((_, index) => {
-    const cell = XLSX.utils.encode_cell({ r: 0, c: index })
-    ganttSheet[cell].s = headerStyle
+    ])
   })
-  baseRows.forEach((_, rowIndex) => {
-    const task = taskList[rowIndex]
+
+  const ganttSheet = XLSX.utils.aoa_to_sheet(ganttRows)
+  const timelineStartColumn = 8
+  ganttSheet['!cols'] = [
+    { wch: 3 }, { wch: 42 }, { wch: 18 }, { wch: 12 }, { wch: 13 },
+    { wch: 13 }, { wch: 16 }, { wch: 8 }, ...dates.map(() => ({ wch: 4 })),
+  ]
+  ganttSheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: timelineStartColumn + dates.length - 1 } },
+  ]
+  ganttSheet['!freeze'] = { xSplit: timelineStartColumn, ySplit: 8 }
+  ganttSheet['!autofilter'] = {
+    ref: `B8:${XLSX.utils.encode_col(timelineStartColumn + dates.length - 1)}${ganttRows.length}`,
+  }
+  ganttSheet['A1'].s = {
+    fill: { fgColor: { rgb: '294238' } },
+    font: { bold: true, color: { rgb: 'E2EDE8' }, sz: 14 },
+    alignment: { horizontal: 'left' },
+  }
+  ganttSheet['A8'].s = headerStyle
+  for (let column = 1; column < timelineStartColumn + dates.length; column += 1) {
+    ganttSheet[XLSX.utils.encode_cell({ r: 7, c: column })].s = headerStyle
+  }
+  dates.forEach((date, dateIndex) => {
+    const column = timelineStartColumn + dateIndex
+    const weekStyle = date.getDay() === 1
+      ? { fill: { fgColor: { rgb: '385B4C' } }, font: { bold: true, color: { rgb: 'E2EDE8' } }, alignment: { horizontal: 'center' } }
+      : { fill: { fgColor: { rgb: '294238' } }, font: { bold: true, color: { rgb: 'E2EDE8' } }, alignment: { horizontal: 'center' } }
+    ganttSheet[XLSX.utils.encode_cell({ r: 4, c: column })].s = weekStyle
+    ganttSheet[XLSX.utils.encode_cell({ r: 5, c: column })].s = weekStyle
+    ganttSheet[XLSX.utils.encode_cell({ r: 6, c: column })].s = weekStyle
+    ganttSheet[XLSX.utils.encode_cell({ r: 7, c: column })].s = weekStyle
+  })
+  tasks.forEach(({ task }, taskIndex) => {
+    const rowIndex = taskIndex + 8
     const critical = criticalIds.has(task.id)
-    dates.forEach((_, dateIndex) => {
-      const cell = ganttSheet[XLSX.utils.encode_cell({ r: rowIndex + 1, c: baseHeaders.length + dateIndex })]
-      if (cell?.v) {
+    const progress = progressForColumn(tasks[taskIndex].column.name)
+    ganttSheet[XLSX.utils.encode_cell({ r: rowIndex, c: 1 })].s = critical
+      ? ganttStyles.critical
+      : { font: { color: { rgb: 'DCE8E1' } } }
+    ganttSheet[XLSX.utils.encode_cell({ r: rowIndex, c: 3 })].s = {
+      fill: { fgColor: { rgb: progress === 100 ? '284536' : progress > 0 ? '4A3D25' : '1C2522' } },
+      font: { color: { rgb: 'E2EDE8' }, bold: true },
+      alignment: { horizontal: 'center' },
+    }
+    for (let dateIndex = 0; dateIndex < dates.length; dateIndex += 1) {
+      const cell = ganttSheet[XLSX.utils.encode_cell({ r: rowIndex, c: timelineStartColumn + dateIndex })]
+      if (cell?.v !== '') {
         cell.s = critical ? ganttStyles.critical : ganttStyles.normal
       }
-    })
-    ganttSheet[XLSX.utils.encode_cell({ r: rowIndex + 1, c: 7 })].s = critical
-      ? ganttStyles.critical
-      : { font: { color: { rgb: '94A3B8' } } }
+    }
   })
-  ganttSheet['!autofilter'] = { ref: `A1:${XLSX.utils.encode_col(headers.length - 1)}${baseRows.length + 1}` }
-  ganttSheet['!freeze'] = { xSplit: 3, ySplit: 1 }
 
   const dataRows = allTasks.map(({ task, column }, index) => ({
     'N° Tarea': index + 1,
