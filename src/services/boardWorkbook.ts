@@ -46,6 +46,11 @@ const statusStyles: Record<'todo' | 'progress' | 'complete', { fill: { fgColor: 
   complete: { fill: { fgColor: { rgb: '284536' } }, font: { color: { rgb: '73B88E' } } },
 }
 
+const ganttStyles = {
+  critical: { fill: { fgColor: { rgb: 'E8798B' } }, font: { color: { rgb: 'FFFFFF' }, bold: true } },
+  normal: { fill: { fgColor: { rgb: '6B8FB3' } }, font: { color: { rgb: 'FFFFFF' } } },
+}
+
 function columnStatus(name: string): 'todo' | 'progress' | 'complete' {
   const normalized = name.toLowerCase()
   if (normalized.includes('complet') || normalized.includes('final')) return 'complete'
@@ -68,6 +73,54 @@ function normalizeDate(value: unknown): string | null {
   const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
   if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
+}
+
+function localDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function dateKey(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function ganttCriticalIds(tasks: Task[]) {
+  const scheduled = tasks.filter((task) => task.start_date && task.end_date)
+  const byId = new Map(scheduled.map((task) => [task.id, task]))
+  const finish = (task: Task) =>
+    localDate(task.end_date as string).getTime() + 86400000
+  const critical = new Set<string>()
+  const successors = new Map<string, Task[]>()
+
+  scheduled.forEach((task) => {
+    ;(task.predecessor_ids ?? []).forEach((predecessorId) => {
+      const predecessor = byId.get(predecessorId)
+      if (predecessor) {
+        successors.set(predecessorId, [
+          ...(successors.get(predecessorId) ?? []),
+          task,
+        ])
+      }
+    })
+  })
+
+  const projectFinish = Math.max(...scheduled.map(finish), 0)
+  scheduled.forEach((task) => {
+    const successorStart = (successors.get(task.id) ?? []).map((item) =>
+      localDate(item.start_date as string).getTime(),
+    )
+    const latestFinish = successorStart.length
+      ? Math.min(...successorStart)
+      : projectFinish
+    if (Math.abs(latestFinish - finish(task)) <= 86400000) {
+      critical.add(task.id)
+    }
+  })
+
+  return critical
 }
 
 export function downloadBoardTemplate() {
@@ -166,6 +219,117 @@ export function exportBoardWorkbook(
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, sheet, 'Actividades')
   XLSX.writeFile(workbook, `${board.name.replace(/[^\w\s-]/g, '').trim() || 'tablero'}.xls`)
+}
+
+export function exportBoardGanttWorkbook(
+  board: Board,
+  columns: BoardColumn[],
+  tasksByColumn: Record<string, Task[]>,
+) {
+  const allTasks = columns.flatMap((column) =>
+    (tasksByColumn[column.id] ?? []).map((task) => ({ column, task })),
+  )
+  const tasks = allTasks
+    .filter(({ task }) => task.start_date && task.end_date)
+    .sort((left, right) =>
+      String(left.task.start_date).localeCompare(String(right.task.start_date)) ||
+      left.task.position - right.task.position,
+    )
+  const taskList = tasks.map(({ task }) => task)
+  const criticalIds = ganttCriticalIds(taskList)
+  const activityNumbers = new Map(allTasks.map(({ task }, index) => [task.id, index + 1]))
+  const firstDate = tasks.length
+    ? localDate(tasks[0].task.start_date as string)
+    : new Date()
+  const lastDate = tasks.length
+    ? localDate(tasks.reduce(
+        (latest, item) => (item.task.end_date! > latest ? item.task.end_date! : latest),
+        tasks[0].task.end_date as string,
+      ))
+    : firstDate
+  const dates: Date[] = []
+  for (const date = new Date(firstDate); date <= lastDate; date.setDate(date.getDate() + 1)) {
+    dates.push(new Date(date))
+  }
+
+  const baseRows = tasks.map(({ task, column }) => ({
+    'N° Tarea': activityNumbers.get(task.id) ?? '',
+    Tarea: task.title,
+    Columna: column.name,
+    'Fecha inicio': task.start_date ?? '',
+    'Fecha fin': task.end_date ?? '',
+    Duración: Math.max(
+      1,
+      Math.round(
+        (localDate(task.end_date as string).getTime() -
+          localDate(task.start_date as string).getTime()) / 86400000,
+      ) + 1,
+    ),
+    Predecesoras: (task.predecessor_ids ?? [])
+      .map((id) => activityNumbers.get(id))
+      .filter((number): number is number => number !== undefined)
+      .join(', '),
+    'Ruta crítica': criticalIds.has(task.id) ? 'Sí' : 'No',
+    ...Object.fromEntries(
+      dates.map((date) => {
+        const key = dateKey(date)
+        const active = key >= (task.start_date as string) && key <= (task.end_date as string)
+        return [key, active ? '■' : '']
+      }),
+    ),
+  }))
+  const ganttSheet = XLSX.utils.json_to_sheet(baseRows)
+  const baseHeaders = ['N° Tarea', 'Tarea', 'Columna', 'Fecha inicio', 'Fecha fin', 'Duración', 'Predecesoras', 'Ruta crítica']
+  const headers = [...baseHeaders, ...dates.map(dateKey)]
+  ganttSheet['!cols'] = [
+    { wch: 11 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
+    { wch: 10 }, { wch: 16 }, { wch: 14 },
+    ...dates.map(() => ({ wch: 4 })),
+  ]
+  headers.forEach((_, index) => {
+    const cell = XLSX.utils.encode_cell({ r: 0, c: index })
+    ganttSheet[cell].s = headerStyle
+  })
+  baseRows.forEach((_, rowIndex) => {
+    const task = taskList[rowIndex]
+    const critical = criticalIds.has(task.id)
+    dates.forEach((_, dateIndex) => {
+      const cell = ganttSheet[XLSX.utils.encode_cell({ r: rowIndex + 1, c: baseHeaders.length + dateIndex })]
+      if (cell?.v) {
+        cell.s = critical ? ganttStyles.critical : ganttStyles.normal
+      }
+    })
+    ganttSheet[XLSX.utils.encode_cell({ r: rowIndex + 1, c: 7 })].s = critical
+      ? ganttStyles.critical
+      : { font: { color: { rgb: '94A3B8' } } }
+  })
+  ganttSheet['!autofilter'] = { ref: `A1:${XLSX.utils.encode_col(headers.length - 1)}${baseRows.length + 1}` }
+  ganttSheet['!freeze'] = { xSplit: 3, ySplit: 1 }
+
+  const dataRows = allTasks.map(({ task, column }, index) => ({
+    'N° Tarea': index + 1,
+    Tarea: task.title,
+    Columna: column.name,
+    'Fecha inicio': task.start_date ?? '',
+    'Fecha fin': task.end_date ?? '',
+    Predecesoras: (task.predecessor_ids ?? [])
+      .map((id) => activityNumbers.get(id))
+      .filter((number): number is number => number !== undefined)
+      .join(', '),
+    'Ruta crítica': criticalIds.has(task.id) ? 'Sí' : 'No',
+  }))
+  const dataSheet = XLSX.utils.json_to_sheet(dataRows)
+  dataSheet['!cols'] = [{ wch: 11 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'].forEach((cell) => {
+    dataSheet[cell].s = headerStyle
+  })
+  dataSheet['!autofilter'] = { ref: `A1:G${dataRows.length + 1}` }
+  dataSheet['!freeze'] = { xSplit: 2, ySplit: 1 }
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, ganttSheet, 'Gantt')
+  XLSX.utils.book_append_sheet(workbook, dataSheet, 'Datos')
+  XLSX.writeFile(workbook, `${board.name.replace(/[^\w\s-]/g, '').trim() || 'tablero'}-gantt.xls`)
 }
 
 export async function readBoardWorkbook(file: File): Promise<ImportedBoard> {

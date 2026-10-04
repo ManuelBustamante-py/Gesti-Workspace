@@ -52,11 +52,11 @@ import {
 } from '../services/profiles'
 import {
   downloadBoardTemplate,
+  exportBoardGanttWorkbook,
   exportBoardWorkbook,
   readBoardWorkbook,
   type ImportedBoard,
 } from '../services/boardWorkbook'
-import { exportBoardProjectXml } from '../services/boardGantt'
 
 type BoardFormState = {
   name: string
@@ -1107,7 +1107,7 @@ function Dashboard() {
       const taskEntries = await Promise.all(
         columns.map(async (column) => [column.id, await getColumnTasks(column.id)] as const),
       )
-      exportBoardProjectXml(board, columns, Object.fromEntries(taskEntries))
+      exportBoardGanttWorkbook(board, columns, Object.fromEntries(taskEntries))
     } catch (err) {
       console.error('Error al exportar cronograma:', err)
       setError(err instanceof Error ? err.message : 'No se pudo exportar el cronograma.')
@@ -1561,7 +1561,7 @@ function Dashboard() {
                         onClick={() => handleExportProject(board)}
                         className="btn-ghost px-3 py-1 text-sm"
                       >
-                        Exportar Project XML
+                        Exportar Gantt XLS
                       </button>
                     </div>
                   </div>
