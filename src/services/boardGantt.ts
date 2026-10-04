@@ -20,10 +20,19 @@ function projectDate(value: string) {
 }
 
 function durationInProjectDays(start: string, finish: string) {
-  const startTime = new Date(`${start}T00:00:00`).getTime()
-  const finishTime = new Date(`${finish}T00:00:00`).getTime()
-  const elapsedDays = Math.round((finishTime - startTime) / 86400000)
-  return Math.max(1, elapsedDays)
+  const current = new Date(`${start}T00:00:00`)
+  const end = new Date(`${finish}T00:00:00`)
+  let workingDays = 0
+
+  while (current < end) {
+    const day = current.getDay()
+    if (day !== 0 && day !== 6) {
+      workingDays += 1
+    }
+    current.setDate(current.getDate() + 1)
+  }
+
+  return Math.max(1, workingDays)
 }
 
 export function exportBoardProjectXml(
@@ -86,7 +95,7 @@ export function exportBoardProjectXml(
   <DefaultStartTime>PT08H0M0S</DefaultStartTime>
   <DefaultFinishTime>PT17H0M0S</DefaultFinishTime>
   <MinutesPerDay>480</MinutesPerDay>
-  <MinutesPerWeek>3360</MinutesPerWeek>
+  <MinutesPerWeek>2400</MinutesPerWeek>
   <Calendars>
     <Calendar>
       <UID>1</UID>
@@ -94,13 +103,13 @@ export function exportBoardProjectXml(
       <IsBaseCalendar>1</IsBaseCalendar>
       <BaseCalendarUID>0</BaseCalendarUID>
       <WeekDays>
-        <WeekDay><DayType>1</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>1</DayType><DayWorking>0</DayWorking></WeekDay>
         <WeekDay><DayType>2</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>3</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>4</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
         <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>7</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>7</DayType><DayWorking>0</DayWorking></WeekDay>
       </WeekDays>
     </Calendar>
   </Calendars>
