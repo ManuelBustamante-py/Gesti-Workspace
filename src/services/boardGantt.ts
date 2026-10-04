@@ -149,7 +149,7 @@ export function exportBoardProjectXml(
         )
         .join('')
 
-      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate, workStartTime)}</Start><Finish>${isoDate(finish, start, workEndTime)}</Finish><Duration>PT${Math.floor((durationDays * minutesPerDay) / 60)}H${(durationDays * minutesPerDay) % 60}M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
+      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>1</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate, workStartTime)}</Start><Finish>${isoDate(finish, start, workEndTime)}</Finish><Duration>PT${Math.floor((durationDays * minutesPerDay) / 60)}H${(durationDays * minutesPerDay) % 60}M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
     },
   ).join('')
 
@@ -159,7 +159,7 @@ export function exportBoardProjectXml(
   <Name>${xml(board.name)}</Name>
   <Title>${xml(board.name)}</Title>
   <Subject>${xml(board.description ?? '')}</Subject>
-  <ScheduleFromStart>1</ScheduleFromStart>
+  <ScheduleFromStart>0</ScheduleFromStart>
   <CalendarUID>1</CalendarUID>
   <DateFormat>17</DateFormat>
   <StartDate>${projectDate(projectStart, workStartTime)}</StartDate>
