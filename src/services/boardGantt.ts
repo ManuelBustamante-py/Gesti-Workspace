@@ -1,4 +1,9 @@
-import type { Board } from './boards'
+import {
+  DEFAULT_WORK_END_TIME,
+  DEFAULT_WORK_START_TIME,
+  DEFAULT_WORKING_DAYS,
+  type Board,
+} from './boards'
 import type { BoardColumn } from './columns'
 import type { Task } from './tasks'
 
@@ -11,28 +16,60 @@ function xml(value: string) {
     .replaceAll("'", '&apos;')
 }
 
-function isoDate(value: string | null, fallback: string, isFinish = false) {
-  return `${value ?? fallback}T${isFinish ? '17:00:00' : '08:00:00'}`
+function isoDate(value: string | null, fallback: string, time: string) {
+  return `${value ?? fallback}T${time}:00`
 }
 
-function projectDate(value: string) {
-  return `${value}T08:00:00`
+function projectDate(value: string, time: string) {
+  return `${value}T${time}:00`
 }
 
-function durationInProjectDays(start: string, finish: string) {
+function projectTime(value: string) {
+  const [hours, minutes] = value.slice(0, 5).split(':')
+  return `PT${Number(hours)}H${Number(minutes)}M0S`
+}
+
+function minutesBetween(start: string, end: string) {
+  const [startHours, startMinutes] = start.split(':').map(Number)
+  const [endHours, endMinutes] = end.split(':').map(Number)
+  return (endHours * 60 + endMinutes) - (startHours * 60 + startMinutes)
+}
+
+function calendarWeekDays(
+  workingDays: number[],
+  startTime: string,
+  endTime: string,
+) {
+  return Array.from({ length: 7 }, (_, index) => {
+    const dayType = index + 1
+    if (!workingDays.includes(dayType)) {
+      return `<WeekDay><DayType>${dayType}</DayType><DayWorking>0</DayWorking></WeekDay>`
+    }
+
+    return `<WeekDay><DayType>${dayType}</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>${projectTime(startTime)}</FromTime><ToTime>${projectTime(endTime)}</ToTime></WorkingTime></WorkingTimes></WeekDay>`
+  }).join('')
+}
+
+function durationInProjectDays(
+  start: string,
+  finish: string,
+  scheduleDays: number[],
+) {
   const current = new Date(`${start}T00:00:00`)
   const end = new Date(`${finish}T00:00:00`)
-  let workingDays = 0
+  let totalWorkingDays = 0
 
   while (current < end) {
     const day = current.getDay()
-    if (day !== 0 && day !== 6) {
-      workingDays += 1
+    const projectDayType = day === 0 ? 1 : day + 1
+    if (scheduleDays.includes(projectDayType)) {
+      totalWorkingDays += 1
     }
+
     current.setDate(current.getDate() + 1)
   }
 
-  return Math.max(1, workingDays)
+  return Math.max(1, totalWorkingDays)
 }
 
 export function exportBoardProjectXml(
@@ -43,11 +80,17 @@ export function exportBoardProjectXml(
   const tasks = columns.flatMap((column) =>
     (tasksByColumn[column.id] ?? []).map((task) => ({ task, column })),
   )
+  const workingDays = board.working_days?.length
+    ? board.working_days
+    : DEFAULT_WORKING_DAYS
+  const workStartTime = board.work_start_time?.slice(0, 5) ?? DEFAULT_WORK_START_TIME
+  const workEndTime = board.work_end_time?.slice(0, 5) ?? DEFAULT_WORK_END_TIME
+  const minutesPerDay = minutesBetween(workStartTime, workEndTime)
   const fallbackDate = new Date().toISOString().slice(0, 10)
   const scheduledTasks = tasks.map(({ task, column }) => {
     const start = task.start_date ?? task.end_date ?? fallbackDate
     const finish = task.end_date ?? task.start_date ?? fallbackDate
-    const durationDays = durationInProjectDays(start, finish)
+    const durationDays = durationInProjectDays(start, finish, workingDays)
     const status = column.name.toLowerCase().includes('complet') ? 100 : 0
     return {
       task,
@@ -78,7 +121,7 @@ export function exportBoardProjectXml(
         )
         .join('')
 
-      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start, true)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
+      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate, workStartTime)}</Start><Finish>${isoDate(finish, start, workEndTime)}</Finish><Duration>PT${Math.floor((durationDays * minutesPerDay) / 60)}H${(durationDays * minutesPerDay) % 60}M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
     },
   ).join('')
 
@@ -90,12 +133,12 @@ export function exportBoardProjectXml(
   <Subject>${xml(board.description ?? '')}</Subject>
   <ScheduleFromStart>1</ScheduleFromStart>
   <CalendarUID>1</CalendarUID>
-  <StartDate>${projectDate(projectStart)}</StartDate>
-  <FinishDate>${isoDate(projectFinish, projectStart, true)}</FinishDate>
-  <DefaultStartTime>PT08H0M0S</DefaultStartTime>
-  <DefaultFinishTime>PT17H0M0S</DefaultFinishTime>
-  <MinutesPerDay>480</MinutesPerDay>
-  <MinutesPerWeek>2400</MinutesPerWeek>
+  <StartDate>${projectDate(projectStart, workStartTime)}</StartDate>
+  <FinishDate>${isoDate(projectFinish, projectStart, workEndTime)}</FinishDate>
+  <DefaultStartTime>${projectTime(workStartTime)}</DefaultStartTime>
+  <DefaultFinishTime>${projectTime(workEndTime)}</DefaultFinishTime>
+  <MinutesPerDay>${minutesPerDay}</MinutesPerDay>
+  <MinutesPerWeek>${workingDays.length * minutesPerDay}</MinutesPerWeek>
   <Calendars>
     <Calendar>
       <UID>1</UID>
@@ -103,13 +146,7 @@ export function exportBoardProjectXml(
       <IsBaseCalendar>1</IsBaseCalendar>
       <BaseCalendarUID>0</BaseCalendarUID>
       <WeekDays>
-        <WeekDay><DayType>1</DayType><DayWorking>0</DayWorking></WeekDay>
-        <WeekDay><DayType>2</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>3</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>4</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>PT08H0M0S</FromTime><ToTime>PT12H0M0S</ToTime></WorkingTime><WorkingTime><FromTime>PT13H0M0S</FromTime><ToTime>PT17H0M0S</ToTime></WorkingTime></WorkingTimes></WeekDay>
-        <WeekDay><DayType>7</DayType><DayWorking>0</DayWorking></WeekDay>
+        ${calendarWeekDays(workingDays, workStartTime, workEndTime)}
       </WeekDays>
     </Calendar>
   </Calendars>

@@ -6,9 +6,14 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import {
   createBoard,
+  DEFAULT_WORK_END_TIME,
+  DEFAULT_WORK_START_TIME,
+  DEFAULT_WORKING_DAYS,
   deleteBoard,
   getBoards,
+  type BoardSchedule,
   type Board,
+  updateBoardSchedule,
   updateBoard,
 } from '../services/boards'
 import {
@@ -150,6 +155,12 @@ function Dashboard() {
   const [editingColumnName, setEditingColumnName] = useState('')
   const [savingColumn, setSavingColumn] = useState(false)
   const [columnError, setColumnError] = useState('')
+  const [boardSchedule, setBoardSchedule] = useState<BoardSchedule>({
+    working_days: DEFAULT_WORKING_DAYS,
+    work_start_time: DEFAULT_WORK_START_TIME,
+    work_end_time: DEFAULT_WORK_END_TIME,
+  })
+  const [savingSchedule, setSavingSchedule] = useState(false)
   const [taskDrafts, setTaskDrafts] = useState<
     Record<string, { title: string; priority: TaskPriority; startDate: string; endDate: string }>
   >({})
@@ -181,6 +192,21 @@ function Dashboard() {
   const [editForm, setEditForm] = useState<BoardFormState>(defaultBoardForm)
   const [savingBoard, setSavingBoard] = useState(false)
   const [editError, setEditError] = useState('')
+
+  useEffect(() => {
+    const selectedBoard = boards.find((board) => board.id === selectedBoardId)
+    if (!selectedBoard) {
+      return
+    }
+
+    setBoardSchedule({
+      working_days: selectedBoard.working_days?.length
+        ? selectedBoard.working_days
+        : DEFAULT_WORKING_DAYS,
+      work_start_time: selectedBoard.work_start_time?.slice(0, 5) ?? DEFAULT_WORK_START_TIME,
+      work_end_time: selectedBoard.work_end_time?.slice(0, 5) ?? DEFAULT_WORK_END_TIME,
+    })
+  }, [boards, selectedBoardId])
 
   useEffect(() => {
     if (!selectedBoardId) {
@@ -651,6 +677,43 @@ function Dashboard() {
     } finally {
       setCreatingColumn(false)
     }
+  }
+
+  async function handleSaveBoardSchedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!selectedBoardId) {
+      return
+    }
+
+    try {
+      setColumnError('')
+      setSavingSchedule(true)
+      const updatedBoard = await updateBoardSchedule(selectedBoardId, boardSchedule)
+      setBoards((currentBoards) =>
+        currentBoards.map((board) =>
+          board.id === updatedBoard.id ? updatedBoard : board,
+        ),
+      )
+    } catch (err) {
+      console.error('Error al actualizar la jornada del tablero:', err)
+      setColumnError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo actualizar la jornada del tablero.',
+      )
+    } finally {
+      setSavingSchedule(false)
+    }
+  }
+
+  function toggleWorkingDay(day: number) {
+    setBoardSchedule((currentSchedule) => ({
+      ...currentSchedule,
+      working_days: currentSchedule.working_days.includes(day)
+        ? currentSchedule.working_days.filter((currentDay) => currentDay !== day)
+        : [...currentSchedule.working_days, day].sort((a, b) => a - b),
+    }))
   }
 
   function handleStartEditColumn(column: BoardColumn) {
@@ -1863,6 +1926,92 @@ function Dashboard() {
                         className="btn-mint-primary px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {creatingColumn ? 'Creando...' : 'Crear columna'}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="glass-panel mt-5 rounded-xl p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-medium text-white">
+                          Jornada del tablero
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Define los días y el horario que usará el Gantt y el XML de Project.
+                        </p>
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        {boardSchedule.working_days.length} día{boardSchedule.working_days.length === 1 ? '' : 's'} por semana
+                      </span>
+                    </div>
+
+                    <form onSubmit={handleSaveBoardSchedule} className="mt-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                        {[
+                          [1, 'Dom'],
+                          [2, 'Lun'],
+                          [3, 'Mar'],
+                          [4, 'Mié'],
+                          [5, 'Jue'],
+                          [6, 'Vie'],
+                          [7, 'Sáb'],
+                        ].map(([day, label]) => (
+                          <label
+                            key={day}
+                            className={`flex cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm transition ${
+                              boardSchedule.working_days.includes(Number(day))
+                                ? 'border-[var(--accent-mint)] bg-[var(--accent-mint)]/15 text-white'
+                                : 'border-white/10 bg-black/20 text-slate-500'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={boardSchedule.working_days.includes(Number(day))}
+                              onChange={() => toggleWorkingDay(Number(day))}
+                              className="sr-only"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-sm text-slate-400">
+                          Hora de inicio
+                          <input
+                            type="time"
+                            value={boardSchedule.work_start_time}
+                            onChange={(event) =>
+                              setBoardSchedule((currentSchedule) => ({
+                                ...currentSchedule,
+                                work_start_time: event.target.value,
+                              }))
+                            }
+                            className="theme-input mt-2 w-full rounded-lg px-4 py-3"
+                          />
+                        </label>
+                        <label className="text-sm text-slate-400">
+                          Hora de término
+                          <input
+                            type="time"
+                            value={boardSchedule.work_end_time}
+                            onChange={(event) =>
+                              setBoardSchedule((currentSchedule) => ({
+                                ...currentSchedule,
+                                work_end_time: event.target.value,
+                              }))
+                            }
+                            className="theme-input mt-2 w-full rounded-lg px-4 py-3"
+                          />
+                        </label>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingSchedule}
+                        className="btn-mint-primary px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {savingSchedule ? 'Guardando jornada...' : 'Guardar jornada'}
                       </button>
                     </form>
                   </div>
