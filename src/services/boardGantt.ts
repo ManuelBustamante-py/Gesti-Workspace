@@ -11,8 +11,8 @@ function xml(value: string) {
     .replaceAll("'", '&apos;')
 }
 
-function isoDate(value: string | null, fallback: string) {
-  return `${value ?? fallback}T08:00:00`
+function isoDate(value: string | null, fallback: string, isFinish = false) {
+  return `${value ?? fallback}T${isFinish ? '17:00:00' : '08:00:00'}`
 }
 
 function projectDate(value: string) {
@@ -69,7 +69,7 @@ export function exportBoardProjectXml(
         )
         .join('')
 
-      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
+      return `<Task><UID>${index + 1}</UID><ID>${index + 1}</ID><Name>${xml(task.title)}</Name><Notes>${xml(task.description ?? '')}</Notes><Active>1</Active><Manual>0</Manual><Type>1</Type><CalendarUID>1</CalendarUID><Start>${isoDate(start, fallbackDate)}</Start><Finish>${isoDate(finish, start, true)}</Finish><Duration>PT${durationDays * 8}H0M0S</Duration><DurationFormat>7</DurationFormat><Estimated>0</Estimated><PercentComplete>${status}</PercentComplete><Priority>${task.priority === 'high' ? 900 : task.priority === 'low' ? 100 : 500}</Priority><Text1>${xml(column.name)}</Text1>${predecessorLinks}</Task>`
     },
   ).join('')
 
@@ -82,7 +82,7 @@ export function exportBoardProjectXml(
   <ScheduleFromStart>1</ScheduleFromStart>
   <CalendarUID>1</CalendarUID>
   <StartDate>${projectDate(projectStart)}</StartDate>
-  <FinishDate>${projectDate(projectFinish)}</FinishDate>
+  <FinishDate>${isoDate(projectFinish, projectStart, true)}</FinishDate>
   <DefaultStartTime>PT08H0M0S</DefaultStartTime>
   <DefaultFinishTime>PT17H0M0S</DefaultFinishTime>
   <MinutesPerDay>480</MinutesPerDay>
