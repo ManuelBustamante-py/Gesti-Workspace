@@ -16,11 +16,37 @@ function xml(value: string) {
     .replaceAll("'", '&apos;')
 }
 
+function isDateOnly(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function dateParts(value: string) {
+  if (!isDateOnly(value)) {
+    throw new Error(`Fecha inválida para exportar a Project: ${value}`)
+  }
+
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error(`Fecha inválida para exportar a Project: ${value}`)
+  }
+
+  return { year, month, day }
+}
+
 function isoDate(value: string | null, fallback: string, time: string) {
-  return `${value ?? fallback}T${time}:00`
+  const date = value ?? fallback
+  dateParts(date)
+  return `${date}T${time}:00`
 }
 
 function projectDate(value: string, time: string) {
+  dateParts(value)
   return `${value}T${time}:00`
 }
 
@@ -55,18 +81,20 @@ function durationInProjectDays(
   finish: string,
   scheduleDays: number[],
 ) {
-  const current = new Date(`${start}T00:00:00`)
-  const end = new Date(`${finish}T00:00:00`)
+  const startParts = dateParts(start)
+  const finishParts = dateParts(finish)
+  const current = new Date(Date.UTC(startParts.year, startParts.month - 1, startParts.day))
+  const end = new Date(Date.UTC(finishParts.year, finishParts.month - 1, finishParts.day))
   let totalWorkingDays = 0
 
   while (current < end) {
-    const day = current.getDay()
+    const day = current.getUTCDay()
     const projectDayType = day === 0 ? 1 : day + 1
     if (scheduleDays.includes(projectDayType)) {
       totalWorkingDays += 1
     }
 
-    current.setDate(current.getDate() + 1)
+    current.setUTCDate(current.getUTCDate() + 1)
   }
 
   return Math.max(1, totalWorkingDays)
@@ -133,6 +161,7 @@ export function exportBoardProjectXml(
   <Subject>${xml(board.description ?? '')}</Subject>
   <ScheduleFromStart>1</ScheduleFromStart>
   <CalendarUID>1</CalendarUID>
+  <DateFormat>17</DateFormat>
   <StartDate>${projectDate(projectStart, workStartTime)}</StartDate>
   <FinishDate>${isoDate(projectFinish, projectStart, workEndTime)}</FinishDate>
   <DefaultStartTime>${projectTime(workStartTime)}</DefaultStartTime>
