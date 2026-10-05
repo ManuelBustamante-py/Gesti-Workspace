@@ -51,6 +51,12 @@ const ganttStyles = {
   normal: { fill: { fgColor: { rgb: '6B8FB3' } }, font: { color: { rgb: 'FFFFFF' } } },
 }
 
+const ganttProgressStyles = {
+  critical: { fill: { fgColor: { rgb: 'B83F5A' } }, font: { color: { rgb: 'FFFFFF' }, bold: true } },
+  complete: { fill: { fgColor: { rgb: '3F8F68' } }, font: { color: { rgb: 'FFFFFF' }, bold: true } },
+  progress: { fill: { fgColor: { rgb: 'C48A3A' } }, font: { color: { rgb: 'FFFFFF' }, bold: true } },
+}
+
 const ganttBorder = {
   top: { style: 'thin', color: { rgb: 'D8E2DD' } },
   bottom: { style: 'thin', color: { rgb: 'D8E2DD' } },
@@ -278,7 +284,7 @@ export function exportBoardGanttWorkbook(
   }
   const ganttRows: unknown[][] = [
     [`GANTT DEL PROYECTO: ${board.name}`, '', '', '', '', '', '', '', ...dates.map(() => '')],
-    [],
+    ['Ruta crítica', '■ Actividad crítica', '', 'Avance', '■ Completada', '', 'En progreso', '■ 60%', ...dates.map(() => '')],
     ['Inicio del proyecto:', '', '', displayDate(firstDate.toISOString().slice(0, 10))],
     ['Semana para mostrar:', '', '', 1],
     ['', '', '', '', '', '', '', '', ...dates.map((date) =>
@@ -350,6 +356,18 @@ export function exportBoardGanttWorkbook(
     alignment: { horizontal: 'left' },
     border: ganttBorder,
   }
+  ganttSheet['A2'].s = {
+    fill: { fgColor: { rgb: 'F1F5F3' } },
+    font: { bold: true, color: { rgb: '294238' } },
+    border: ganttBorder,
+  }
+  ;['B2', 'E2', 'H2'].forEach((cell) => {
+    ganttSheet[cell].s = {
+      fill: { fgColor: { rgb: 'F1F5F3' } },
+      font: { color: { rgb: '294238' } },
+      border: ganttBorder,
+    }
+  })
   ganttSheet['A8'].s = { ...headerStyle, border: ganttBorder }
   for (let column = 1; column < timelineStartColumn + dates.length; column += 1) {
     ganttSheet[XLSX.utils.encode_cell({ r: 7, c: column })].s = { ...headerStyle, border: ganttBorder }
@@ -367,6 +385,10 @@ export function exportBoardGanttWorkbook(
     const rowIndex = taskIndex + 8
     const critical = criticalIds.has(task.id)
     const progress = progressForColumn(tasks[taskIndex].column.name)
+    const taskStart = localDate(task.start_date as string).getTime()
+    const taskEnd = localDate(task.end_date as string).getTime()
+    const durationMs = Math.max(86400000, taskEnd - taskStart + 86400000)
+    const progressEnd = taskStart + durationMs * (progress / 100)
     for (let column = 1; column < timelineStartColumn; column += 1) {
       const cell = ganttSheet[XLSX.utils.encode_cell({ r: rowIndex, c: column })]
       cell.s = {
@@ -385,19 +407,43 @@ export function exportBoardGanttWorkbook(
       const cell = ganttSheet[XLSX.utils.encode_cell({ r: rowIndex, c: timelineStartColumn + dateIndex })]
       const date = dates[dateIndex]
       const weekend = date.getDay() === 0 || date.getDay() === 6
-      cell.s = cell.v !== ''
-        ? { ...(critical ? ganttStyles.critical : ganttStyles.normal), border: ganttBorder, alignment: { horizontal: 'center' } }
+      const dateTime = date.getTime()
+      const active = dateKey(date) >= (task.start_date as string) &&
+        dateKey(date) <= (task.end_date as string)
+      const completed = active && dateTime < progressEnd
+      cell.s = active
+        ? {
+            ...(completed
+              ? (critical ? ganttProgressStyles.critical
+                : progress === 100 ? ganttProgressStyles.complete
+                : ganttProgressStyles.progress)
+              : critical ? ganttStyles.critical : ganttStyles.normal),
+            border: ganttBorder,
+            alignment: { horizontal: 'center' },
+          }
         : {
             fill: { fgColor: { rgb: weekend ? 'EEF2F0' : 'FFFFFF' } },
             border: ganttBorder,
           }
     }
   })
+  ganttSheet['!rows'] = [
+    { hpt: 26 },
+    { hpt: 20 },
+    { hpt: 20 },
+    { hpt: 20 },
+    { hpt: 20 },
+    { hpt: 20 },
+    { hpt: 20 },
+    { hpt: 28 },
+    ...tasks.map(() => ({ hpt: 22 })),
+  ]
 
   const dataRows = allTasks.map(({ task, column }, index) => ({
     'N° Tarea': index + 1,
     Tarea: task.title,
     Columna: column.name,
+    Progreso: `${progressForColumn(column.name)}%`,
     'Fecha inicio': task.start_date ?? '',
     'Fecha fin': task.end_date ?? '',
     Predecesoras: (task.predecessor_ids ?? [])
@@ -407,11 +453,19 @@ export function exportBoardGanttWorkbook(
     'Ruta crítica': criticalIds.has(task.id) ? 'Sí' : 'No',
   }))
   const dataSheet = XLSX.utils.json_to_sheet(dataRows)
-  dataSheet['!cols'] = [{ wch: 11 }, { wch: 42 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }]
-  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'].forEach((cell) => {
+  dataSheet['!cols'] = [{ wch: 11 }, { wch: 42 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }]
+  ;['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1'].forEach((cell) => {
     dataSheet[cell].s = headerStyle
   })
-  dataSheet['!autofilter'] = { ref: `A1:G${dataRows.length + 1}` }
+  dataRows.forEach((row, index) => {
+    const progress = progressForColumn(row.Columna)
+    dataSheet[`D${index + 2}`].s = {
+      fill: { fgColor: { rgb: progress === 100 ? '3F8F68' : progress > 0 ? 'C48A3A' : '718096' } },
+      font: { color: { rgb: 'FFFFFF' }, bold: true },
+      alignment: { horizontal: 'center' },
+    }
+  })
+  dataSheet['!autofilter'] = { ref: `A1:H${dataRows.length + 1}` }
   dataSheet['!freeze'] = { xSplit: 2, ySplit: 1 }
 
   const workbook = XLSX.utils.book_new()
