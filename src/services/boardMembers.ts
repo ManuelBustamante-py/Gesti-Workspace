@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { NO_PERMISSION_MESSAGE } from './tasks'
 
 export type BoardMemberRole = 'viewer' | 'editor'
 
@@ -97,6 +98,52 @@ export async function inviteBoardMember(
   }
 
   return data as BoardInvitation
+}
+
+export async function updateBoardMemberRole(memberId: string, role: BoardMemberRole) {
+  const { data, error } = await supabase
+    .from('board_members')
+    .update({ role })
+    .eq('id', memberId)
+    .select('id')
+
+  if (error) {
+    throw error
+  }
+  if (!data || data.length === 0) {
+    throw new Error(NO_PERMISSION_MESSAGE)
+  }
+}
+
+/** El propietario quita a un miembro, o un miembro abandona el tablero. */
+export async function removeBoardMember(memberId: string) {
+  const { data, error } = await supabase
+    .from('board_members')
+    .delete()
+    .eq('id', memberId)
+    .select('id')
+
+  if (error) {
+    throw error
+  }
+  if (!data || data.length === 0) {
+    throw new Error(NO_PERMISSION_MESSAGE)
+  }
+}
+
+export async function cancelBoardInvitation(invitationId: string) {
+  const { data, error } = await supabase
+    .from('board_invitations')
+    .delete()
+    .eq('id', invitationId)
+    .select('id')
+
+  if (error) {
+    throw error
+  }
+  if (!data || data.length === 0) {
+    throw new Error(NO_PERMISSION_MESSAGE)
+  }
 }
 
 export async function getReceivedBoardInvitations() {

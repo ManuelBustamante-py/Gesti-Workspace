@@ -1,225 +1,135 @@
-import type { ChangeEvent } from 'react'
+import { memo } from 'react'
 
-import type { Task, TaskPriority } from '../../services/tasks'
+import { formatDateKey } from '../../domain/dates'
+import { descriptionField, descriptionSummary } from '../../domain/description'
+import type { TaskScheduleInfo } from '../../domain/schedule'
+import type { Task } from '../../services/tasks'
+import { priorityLabels } from '../../domain/priority'
 
-export interface EditingTaskState {
-  id: string
-  columnId: string
-  title: string
-  description: string
-  priority: TaskPriority
-  startDate: string
-  endDate: string
-  predecessorIds: string[]
-}
+export type TaskRelation = 'selected' | 'related' | 'dimmed' | null
 
 interface TaskCardProps {
   task: Task
+  number: number | undefined
+  predecessorNumbers: number[]
   columns: { id: string; name: string }[]
-  editingTask: EditingTaskState | null
-  savingTask: boolean
-  movingTask: boolean
-  onStartEdit: (task: Task) => void
-  onEditChange: (changes: Partial<EditingTaskState>) => void
-  onSaveEdit: () => void
-  onCancelEdit: () => void
+  scheduleInfo?: TaskScheduleInfo
+  canEdit: boolean
+  moving: boolean
+  relation: TaskRelation
+  onOpen: (task: Task, mode: 'view' | 'edit') => void
   onMove: (task: Task, columnId: string) => void
   onDelete: (task: Task) => void
-  availableTasks: Task[]
-  selectedTaskId: string | null
-  onSelectTaskRelation: (taskId: string) => void
+  onToggleRelation: (taskId: string) => void
 }
 
-const priorityLabels: Record<TaskPriority, string> = {
-  low: 'baja',
-  medium: 'media',
-  high: 'alta',
-}
+const shortDate = (value: string) => formatDateKey(value, { day: 'numeric', month: 'short' })
 
 function TaskCard({
   task,
+  number,
+  predecessorNumbers,
   columns,
-  editingTask,
-  savingTask,
-  movingTask,
-  onStartEdit,
-  onEditChange,
-  onSaveEdit,
-  onCancelEdit,
+  scheduleInfo,
+  canEdit,
+  moving,
+  relation,
+  onOpen,
   onMove,
   onDelete,
-  availableTasks,
-  selectedTaskId,
-  onSelectTaskRelation,
+  onToggleRelation,
 }: TaskCardProps) {
-  const isEditing = editingTask?.id === task.id
-  const numberedTasks = [...availableTasks].sort((left, right) => {
-    const createdDifference = left.created_at.localeCompare(right.created_at)
-    return createdDifference || left.id.localeCompare(right.id)
-  })
-  const activityNumber = numberedTasks.findIndex((candidate) => candidate.id === task.id) + 1
-  const predecessorTasks = (task.predecessor_ids ?? [])
-    .map((predecessorId) => numberedTasks.find((candidate) => candidate.id === predecessorId))
-    .filter((candidate): candidate is Task => Boolean(candidate))
-  const successorTasks = numberedTasks.filter((candidate) =>
-    (candidate.predecessor_ids ?? []).includes(task.id),
-  )
-  const relationSelected = selectedTaskId === task.id
-  const relationHighlighted =
-    relationSelected ||
-    predecessorTasks.some((candidate) => candidate.id === selectedTaskId) ||
-    successorTasks.some((candidate) => candidate.id === selectedTaskId)
-
-  if (isEditing && editingTask) {
-    return (
-      <div className="task-card space-y-2">
-        <input
-          type="text"
-          value={editingTask.title}
-          onChange={(event) => onEditChange({ title: event.target.value })}
-          className="control-input w-full rounded-lg px-2 py-2 text-sm outline-none"
-        />
-        <textarea
-          value={editingTask.description}
-          onChange={(event) => onEditChange({ description: event.target.value })}
-          rows={3}
-          className="control-input w-full resize-none rounded-lg px-2 py-2 text-sm outline-none"
-        />
-        <div className="flex gap-2">
-          <select
-            value={editingTask.priority}
-            onChange={(event) =>
-              onEditChange({ priority: event.target.value as TaskPriority })
-            }
-            className="control-input rounded-lg px-2 py-2 text-sm"
-          >
-            <option value="low">Baja</option>
-            <option value="medium">Media</option>
-            <option value="high">Alta</option>
-          </select>
-          <input
-            type="date"
-            value={editingTask.startDate}
-            onChange={(event) => onEditChange({ startDate: event.target.value })}
-            className="control-input min-w-0 flex-1 rounded-lg px-2 py-2 text-sm"
-            aria-label="Fecha de inicio"
-          />
-          <input
-            type="date"
-            value={editingTask.endDate}
-            onChange={(event) => onEditChange({ endDate: event.target.value })}
-            className="control-input min-w-0 flex-1 rounded-lg px-2 py-2 text-sm"
-            aria-label="Fecha de fin"
-          />
-        </div>
-        <label className="block text-xs text-[var(--text-muted)]">
-          Predecesoras (fin a inicio)
-          <select
-            multiple
-            value={editingTask.predecessorIds}
-            onChange={(event) =>
-              onEditChange({
-                predecessorIds: Array.from(
-                  event.target.selectedOptions,
-                  (option) => option.value,
-                ),
-              })
-            }
-            className="control-input mt-1 min-h-20 w-full rounded-lg px-2 py-2 text-sm"
-          >
-            {availableTasks
-              .filter((candidate) => candidate.id !== task.id)
-              .map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  #{numberedTasks.findIndex((item) => item.id === candidate.id) + 1} · {candidate.title}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="flex gap-2">
-          <button type="button" onClick={onSaveEdit} disabled={savingTask} className="btn-mint-primary px-3 py-2 text-xs">
-            {savingTask ? 'Guardando...' : 'Guardar'}
-          </button>
-          <button type="button" onClick={onCancelEdit} className="btn-ghost px-3 py-2 text-xs">
-            Cancelar
-          </button>
-        </div>
-      </div>
-    )
-  }
+  const summary = task.description ? descriptionSummary(task.description) : ''
+  const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
+  const estimate = task.description ? descriptionField(task.description, 'Estimación') : null
 
   return (
-    <div className={`task-card transition ${
-      selectedTaskId && !relationHighlighted ? 'opacity-35' : ''
-    } ${
-      relationSelected ? 'ring-2 ring-[var(--accent-mint)]' : ''
-    }`}>
-      <p className="text-sm font-medium text-[var(--text-main)]">
+    <article
+      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' ? 'opacity-40' : ''} ${
+        relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : ''
+      }`}
+    >
+      <div className="flex items-start gap-2">
         <button
           type="button"
-          onClick={() => onSelectTaskRelation(task.id)}
-          className={`mr-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full border px-1 text-xs font-semibold transition ${
-            relationSelected
-              ? 'border-[var(--accent-mint)] bg-[var(--accent-mint)] text-[var(--bg-main)]'
-              : relationHighlighted
-                ? 'border-amber-300 bg-amber-300/20 text-amber-200'
-                : 'border-white/20 text-[var(--text-muted)] hover:border-[var(--accent-mint)] hover:text-white'
-          }`}
-          aria-label={`Mostrar relaciones de la tarea ${activityNumber}`}
-          title="Mostrar predecesoras y sucesoras"
+          onClick={() => onToggleRelation(task.id)}
+          className={`task-number ${relation === 'selected' ? 'task-number-selected' : relation === 'related' ? 'task-number-related' : ''}`}
+          aria-pressed={relation === 'selected'}
+          aria-label={`Resaltar predecesoras y sucesoras de la tarea ${number ?? ''}`}
+          title="Resaltar predecesoras y sucesoras"
         >
-          {activityNumber}
+          {number ?? '·'}
         </button>
-        {task.title}
-      </p>
-      {predecessorTasks.length > 0 && (
-        <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Predecesora{predecessorTasks.length === 1 ? '' : 's'}:{' '}
-          {predecessorTasks
-            .map((predecessor) => `#${numberedTasks.findIndex((item) => item.id === predecessor.id) + 1}`)
-            .join(', ')}
+        <button
+          type="button"
+          onClick={() => onOpen(task, 'view')}
+          className="task-title min-w-0 flex-1 text-left"
+        >
+          {task.title}
+        </button>
+      </div>
+
+      {summary && <p className="task-summary">{summary}</p>}
+
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+        <span className={`priority-${task.priority} rounded-full px-2 py-0.5`}>
+          {priorityLabels[task.priority]}
+        </span>
+        {sprint && <span className="meta-chip">{sprint}</span>}
+        {estimate && <span className="meta-chip">Peso {estimate.replace(/\s*\(.*\)/, '')}</span>}
+        {scheduleInfo?.critical && <span className="critical-chip" title="Ruta crítica">◆ Crítica</span>}
+      </div>
+
+      {(task.start_date || task.end_date) && (
+        <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+          {task.start_date ? shortDate(task.start_date) : 'Sin inicio'} → {task.end_date ? shortDate(task.end_date) : 'Sin fin'}
+          {scheduleInfo && ` · ${scheduleInfo.duration} d háb.`}
         </p>
       )}
-      <div className="mt-2 flex flex-wrap gap-2 text-xs">
-        <span className={`priority-${task.priority} rounded-full px-2 py-1`}>
-          Prioridad {priorityLabels[task.priority]}
-        </span>
-        {(task.start_date || task.end_date) && (
-          <span className="rounded-full border border-white/5 bg-black/20 px-2 py-1 text-[var(--text-muted)]">
-            {task.start_date ?? 'Sin inicio'} → {task.end_date ?? 'Sin fin'}
-          </span>
+      {predecessorNumbers.length > 0 && (
+        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+          Depende de {predecessorNumbers.map((value) => `#${value}`).join(', ')}
+          {scheduleInfo?.startsBeforePredecessor && (
+            <span className="ml-1 text-[var(--priority-medium)]" title="Empieza antes de que termine una predecesora">
+              ⚠ solapada
+            </span>
+          )}
+        </p>
+      )}
+
+      <div className="task-actions">
+        <button type="button" onClick={() => onOpen(task, 'view')} className="btn-ghost px-2 py-1 text-xs">
+          Ver detalle
+        </button>
+        {canEdit && (
+          <>
+            <select
+              value={task.column_id}
+              onChange={(event) => onMove(task, event.target.value)}
+              disabled={moving}
+              className="control-input min-w-0 max-w-32 rounded-lg px-2 py-1 text-xs"
+              aria-label={`Mover la tarea ${number ?? ''} a otra columna`}
+            >
+              <option value={task.column_id}>Mover a...</option>
+              {columns
+                .filter((column) => column.id !== task.column_id)
+                .map((column) => (
+                  <option key={column.id} value={column.id}>
+                    {column.name}
+                  </option>
+                ))}
+            </select>
+            <button type="button" onClick={() => onOpen(task, 'edit')} className="btn-ghost px-2 py-1 text-xs">
+              Editar
+            </button>
+            <button type="button" onClick={() => onDelete(task)} className="btn-danger px-2 py-1 text-xs" aria-label={`Eliminar la tarea ${number ?? ''}`}>
+              Eliminar
+            </button>
+          </>
         )}
       </div>
-      {task.description && (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">{task.description}</p>
-      )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <select
-          value={task.column_id}
-          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            onMove(task, event.target.value)
-          }
-          disabled={movingTask}
-          className="control-input max-w-32 rounded-lg px-2 py-1 text-xs"
-        >
-          <option value={task.column_id}>Mover a...</option>
-          {columns
-            .filter((column) => column.id !== task.column_id)
-            .map((column) => (
-              <option key={column.id} value={column.id}>
-                {column.name}
-              </option>
-            ))}
-        </select>
-        <button type="button" onClick={() => onStartEdit(task)} className="btn-ghost px-2 py-1 text-xs">
-          Editar
-        </button>
-        <button type="button" onClick={() => onDelete(task)} className="btn-danger px-2 py-1 text-xs">
-          Eliminar
-        </button>
-      </div>
-    </div>
+    </article>
   )
 }
 
-export default TaskCard
+export default memo(TaskCard)
