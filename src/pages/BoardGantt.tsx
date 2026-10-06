@@ -17,7 +17,10 @@ import { getProfile, type Profile } from '../services/profiles'
 type Zoom = 'fit' | 'week' | 'day'
 
 const ZOOM_LABELS: Record<Zoom, string> = { fit: 'Ajustar', week: 'Semanas', day: 'Días' }
-/** Ancho de un día en píxeles para las escalas fijas. «Ajustar» lo calcula según el espacio. */
+/**
+ * Ancho mínimo de un día en las escalas «Semanas» y «Días». Si el proyecto es corto se
+ * estira hasta ocupar el ancho disponible (sin hueco a la derecha); si es largo, se desplaza.
+ */
 const FIXED_DAY_WIDTH: Record<Exclude<Zoom, 'fit'>, number> = { week: 20, day: 44 }
 const MIN_FIT_DAY_WIDTH = 8
 const MAX_FIT_DAY_WIDTH = 72
@@ -189,9 +192,10 @@ function BoardGantt() {
 
   const currentSchedule = boardSchedule(board)
   const totalDays = timeline?.days.length ?? 0
+  const fillDayWidth = (availableWidth - labelWidth - 2) / Math.max(totalDays, 1)
   const dayWidth = zoom === 'fit'
-    ? Math.min(MAX_FIT_DAY_WIDTH, Math.max(MIN_FIT_DAY_WIDTH, (availableWidth - labelWidth - 2) / Math.max(totalDays, 1)))
-    : FIXED_DAY_WIDTH[zoom]
+    ? Math.min(MAX_FIT_DAY_WIDTH, Math.max(MIN_FIT_DAY_WIDTH, fillDayWidth))
+    : Math.max(FIXED_DAY_WIDTH[zoom], fillDayWidth)
   const weekWidth = dayWidth * 7
   const timelineWidth = dayWidth * totalDays
   const showDays = dayWidth >= 18
@@ -354,10 +358,15 @@ function BoardGantt() {
                       .map((userId) => people.find((person) => person.userId === userId))
                       .filter((person): person is BoardPerson => Boolean(person))
                     // La etiqueta siempre lleva el número: dentro de la barra si cabe, si no, al lado.
-                    const barLabel = `#${number} · ${progress}%`
-                    const labelWidthEstimate = barLabel.length * 6.4 + 14
-                    const labelInside = width >= labelWidthEstimate
-                    const labelOnLeft = !labelInside && left + width + 6 + labelWidthEstimate > timelineWidth
+                    // Dentro de la barra: «#n · %» si cabe; si no, solo «#n» (el avance ya lo indica
+                    // el color). Solo en barras donde ni el número cabe, la etiqueta va al lado.
+                    const textWidth = (text: string) => text.length * 6.4 + 12
+                    const fullLabel = `#${number} · ${progress}%`
+                    const shortLabel = `#${number}`
+                    const insideLabel = width >= textWidth(fullLabel) ? fullLabel : width >= textWidth(shortLabel) ? shortLabel : null
+                    const labelInside = insideLabel !== null
+                    const barLabel = insideLabel ?? fullLabel
+                    const labelOnLeft = !labelInside && left + width + 6 + textWidth(fullLabel) > timelineWidth
                     const description = `#${number} ${task.title}. ${formatDateKey(task.start_date!)} a ${formatDateKey(task.end_date!)}. ${columnStatusLabels[status]}, ${progress}%${critical ? ', ruta crítica' : ''}`
                     return (
                       <div key={task.id} className="gantt-row" style={{ gridTemplateColumns: `${labelWidth}px ${timelineWidth}px`, height: rowHeight }}>
