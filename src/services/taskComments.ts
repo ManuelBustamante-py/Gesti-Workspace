@@ -10,6 +10,12 @@ export const commentKindLabels: Record<CommentKind, string> = {
   workaround: 'Parche temporal',
 }
 
+export const commentKindIcons: Record<CommentKind, string> = {
+  comment: '💬',
+  issue: '⚠',
+  workaround: '🩹',
+}
+
 export type CommentAttachment = {
   path: string
   type: string

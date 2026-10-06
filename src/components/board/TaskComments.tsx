@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { formatBytes, MAX_ATTACHMENTS } from '../../lib/imageCompression'
 import { initials } from '../../domain/people'
 import {
+  commentKindIcons,
   commentKindLabels,
   createTaskComment,
   deleteTaskComment,
@@ -26,7 +27,6 @@ interface TaskCommentsProps {
 type PendingImage = { id: string; file: File; previewUrl: string }
 
 const KINDS: CommentKind[] = ['comment', 'issue', 'workaround']
-const kindIcons: Record<CommentKind, string> = { comment: '💬', issue: '⚠', workaround: '🩹' }
 
 const relativeTime = new Intl.RelativeTimeFormat('es', { numeric: 'auto' })
 
@@ -197,7 +197,7 @@ function TaskComments({ boardId, taskId, currentUserId, canComment, isBoardOwner
                       {isAuthor && <span className="text-xs text-[var(--text-muted)]">(tú)</span>}
                       {comment.kind !== 'comment' && (
                         <span className={`comment-kind comment-kind-${comment.kind}`}>
-                          {kindIcons[comment.kind]} {commentKindLabels[comment.kind]}
+                          {commentKindIcons[comment.kind]} {commentKindLabels[comment.kind]}
                         </span>
                       )}
                       <time className="text-xs text-[var(--text-muted)]" dateTime={comment.created_at} title={new Date(comment.created_at).toLocaleString('es-CL')}>
@@ -305,7 +305,7 @@ function TaskComments({ boardId, taskId, currentUserId, canComment, isBoardOwner
 
           <div className="comment-composer-actions">
             <select value={kind} onChange={(event) => setKind(event.target.value as CommentKind)} className="control-input rounded-lg px-2 py-2 text-sm" aria-label="Tipo de comentario">
-              {KINDS.map((value) => <option key={value} value={value}>{kindIcons[value]} {commentKindLabels[value]}</option>)}
+              {KINDS.map((value) => <option key={value} value={value}>{commentKindIcons[value]} {commentKindLabels[value]}</option>)}
             </select>
             <button
               type="button"

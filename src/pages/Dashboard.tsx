@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
+import { useMessageNotifications, type MessageToast } from '../hooks/useMessageNotifications'
 import Column, { type TaskDraft } from '../components/board/Column'
 import type { TaskRelation } from '../components/board/TaskCard'
 import TaskDetailDialog from '../components/board/TaskDetailDialog'
@@ -12,6 +13,8 @@ import BoardScheduleForm from '../components/dashboard/BoardScheduleForm'
 import BoardStats from '../components/dashboard/BoardStats'
 import CollaboratorsModal from '../components/dashboard/CollaboratorsModal'
 import EditBoardModal from '../components/dashboard/EditBoardModal'
+import MessagesPanel from '../components/dashboard/MessagesPanel'
+import ToastStack from '../components/ui/ToastStack'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
 import type { ColumnStatus } from '../domain/columnStatus'
 import { createsDependencyCycle } from '../domain/dependencies'
@@ -43,6 +46,7 @@ import {
   type BoardMemberRole,
 } from '../services/boardMembers'
 import { createBoardFromImport } from '../services/boardImport'
+import { setBoardNotificationsMuted } from '../services/boardMessages'
 import {
   downloadBoardTemplate,
   exportBoardGanttWorkbook,
@@ -107,6 +111,7 @@ function Dashboard() {
   )
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
+  const [messagesOpen, setMessagesOpen] = useState(false)
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
 
   const [newBoard, setNewBoard] = useState({ name: '', description: '', color: '#6366f1' })
@@ -127,6 +132,21 @@ function Dashboard() {
 
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
+  const openBoardRef = useRef<(boardId: string, taskId?: string) => void>(() => undefined)
+  const messages = useMessageNotifications(user?.id, (toast) => openBoardRef.current(toast.board_id, toast.task_id))
+  const { setCounts: setMessageCounts } = messages
+  const selectedMessageInfo = selectedBoardId ? messages.counts[selectedBoardId] : undefined
+  const totalUnreadMessages = Object.values(messages.counts).reduce(
+    (total, item) => total + (item.muted ? 0 : item.unread),
+    0,
+  )
+  const handleMessagesMarkedRead = useCallback(() => {
+    if (!selectedBoardId) return
+    setMessageCounts((current) => ({
+      ...current,
+      [selectedBoardId]: { muted: current[selectedBoardId]?.muted ?? false, unread: 0 },
+    }))
+  }, [selectedBoardId, setMessageCounts])
   const { columns, tasksByColumn, setColumns, setTasksByColumn, members, invitations, assignments, setAssignments } = boardData
 
   const role: BoardRole = resolveBoardRole(selectedBoard, user?.id, members)
@@ -276,19 +296,25 @@ function Dashboard() {
 
   // --- Navegación ------------------------------------------------------------
 
-  function openBoard(boardId: string) {
+  function openBoard(boardId: string, taskId?: string) {
     setActiveView('boards')
     setSelectedBoardId(boardId)
     setSettingsCollapsed(readSettingsCollapsed(boardId))
-    setOpenTask(null)
+    setOpenTask(taskId ? { id: taskId, mode: 'view' } : null)
+    setMessagesOpen(false)
     setSelectedRelationId(null)
     setAssigneeFilter('all')
     setBoardError('')
     window.history.replaceState(null, '', `${window.location.pathname}#board-${boardId}`)
   }
 
+  useEffect(() => {
+    openBoardRef.current = openBoard
+  })
+
   function closeBoard() {
     setSelectedBoardId(null)
+    setMessagesOpen(false)
     setCollaboratorsOpen(false)
     setOpenTask(null)
     window.history.replaceState(null, '', window.location.pathname)
@@ -631,6 +657,20 @@ function Dashboard() {
     }
   }, [setTasksByColumn])
 
+  async function handleToggleMuted(muted: boolean) {
+    if (!selectedBoardId) return
+    await setBoardNotificationsMuted(selectedBoardId, muted)
+    setMessageCounts((current) => ({
+      ...current,
+      [selectedBoardId]: { unread: current[selectedBoardId]?.unread ?? 0, muted },
+    }))
+  }
+
+  function handleOpenToast(toast: MessageToast) {
+    messages.dismissToast(toast.commentId)
+    openBoard(toast.board_id, toast.task_id)
+  }
+
   async function handleSaveAssignees(task: Task, userIds: string[]) {
     const previous = assignments[task.id] ?? []
     try {
@@ -715,7 +755,14 @@ function Dashboard() {
           </Link>
         </div>
         <nav className="mt-8 space-y-2" aria-label="Navegación principal">
-          {navButton('boards', '▦', 'Tableros')}
+          {navButton(
+            'boards',
+            '▦',
+            'Tableros',
+            totalUnreadMessages > 0 && (
+              <span className="nav-badge" aria-label={`${totalUnreadMessages} mensajes sin leer`}>{totalUnreadMessages}</span>
+            ),
+          )}
           {navButton('create', '＋', 'Crear tablero')}
           {navButton(
             'requests',
@@ -726,6 +773,27 @@ function Dashboard() {
                 {receivedInvitations.length}
               </span>
             ),
+          )}
+          {selectedBoard && messages.supported && (
+            <button
+              type="button"
+              title="Mensajes del tablero"
+              onClick={() => {
+                setMessagesOpen(true)
+                setMobileMenuOpen(false)
+              }}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-[var(--text-muted)] hover:bg-white/5"
+            >
+              <span>
+                <span aria-hidden="true">✉ </span>
+                <span className="sidebar-label">Mensajes</span>
+              </span>
+              {selectedMessageInfo?.muted ? (
+                <span title="Notificaciones silenciadas" aria-label="Silenciado">🔕</span>
+              ) : (selectedMessageInfo?.unread ?? 0) > 0 ? (
+                <span className="nav-badge" aria-label={`${selectedMessageInfo?.unread} sin leer`}>{selectedMessageInfo?.unread}</span>
+              ) : null}
+            </button>
           )}
           {selectedBoard && (
             <button
@@ -895,6 +963,9 @@ function Dashboard() {
                         <div className="flex flex-1 flex-col p-5">
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="min-w-0 break-words text-lg font-semibold text-white">{board.name}</h3>
+                            {!messages.counts[board.id]?.muted && (messages.counts[board.id]?.unread ?? 0) > 0 && (
+                              <span className="nav-badge shrink-0" title="Mensajes sin leer">✉ {messages.counts[board.id]?.unread}</span>
+                            )}
                             <span className="role-pill shrink-0" title={isOwner ? 'Eres propietario' : 'Tablero compartido contigo'}>
                               {isOwner ? `${roleEmotes.owner} Tuyo` : '🤝 Compartido'}
                             </span>
@@ -932,6 +1003,15 @@ function Dashboard() {
                 </div>
                 <div className="board-toolbar">
                   <Link to={`/dashboard/gantt/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Diagrama Gantt</Link>
+                  {messages.supported && (
+                    <button type="button" onClick={() => setMessagesOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">
+                      ✉ Mensajes
+                      {!selectedMessageInfo?.muted && (selectedMessageInfo?.unread ?? 0) > 0 && (
+                        <span className="nav-badge ml-1.5">{selectedMessageInfo?.unread}</span>
+                      )}
+                      {selectedMessageInfo?.muted && <span className="ml-1" aria-label="Silenciado">🔕</span>}
+                    </button>
+                  )}
                   <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks) => exportBoardWorkbook(selectedBoard, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">XLSX</button>
                   <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks, names) => exportBoardGanttWorkbook(selectedBoard, cols, tasks, names))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
                   <button type="button" onClick={() => setCollaboratorsOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">Colaboradores</button>
@@ -1111,6 +1191,27 @@ function Dashboard() {
 
       {editingBoard && <EditBoardModal board={editingBoard} onSave={handleUpdateBoard} onClose={() => setEditingBoard(null)} />}
       {securityOpen && <SecurityInfoDialog onClose={() => setSecurityOpen(false)} />}
+      {messagesOpen && selectedBoard && (
+        <MessagesPanel
+          board={selectedBoard}
+          numbers={numbers}
+          muted={selectedMessageInfo?.muted ?? false}
+          browserPermission={messages.browserPermission}
+          onRequestBrowserPermission={() => void messages.requestBrowserPermission()}
+          onToggleMuted={handleToggleMuted}
+          onMarkedRead={handleMessagesMarkedRead}
+          onOpenTask={(taskId) => {
+            setMessagesOpen(false)
+            setOpenTask({ id: taskId, mode: 'view' })
+          }}
+          onClose={() => setMessagesOpen(false)}
+        />
+      )}
+      <ToastStack
+        toasts={messages.toasts.filter((toast) => !(messagesOpen && toast.board_id === selectedBoardId))}
+        onOpen={handleOpenToast}
+        onDismiss={messages.dismissToast}
+      />
     </main>
   )
 }

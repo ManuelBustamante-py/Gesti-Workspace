@@ -168,8 +168,10 @@ function BoardGantt() {
     }
   }
 
-  const labelWidth = narrow ? 156 : 340
-  const rowHeight = narrow ? 70 : 64
+  // Columna de tareas proporcional a la pantalla para que los títulos quepan en dos líneas.
+  const labelWidth = narrow ? 156 : Math.round(Math.min(440, Math.max(300, availableWidth * 0.26)))
+  // Dos líneas de título + línea de estado, sin recortes.
+  const rowHeight = narrow ? 78 : 74
   const today = todayKey()
 
   if (loadingBoard || (board && loading && columns.length === 0)) {
@@ -293,7 +295,8 @@ function BoardGantt() {
                         ))}
                       </div>
                     )}
-                    {todayVisible && (
+                    {/* Con fila de días, hoy ya se resalta en su celda; si no, se marca abajo para no tapar la fecha. */}
+                    {todayVisible && !showDays && (
                       <span className="gantt-today-pill" style={{ left: x(today) + dayWidth / 2 }}>Hoy</span>
                     )}
                   </div>
@@ -350,11 +353,15 @@ function BoardGantt() {
                     const assignees = (assignments[task.id] ?? [])
                       .map((userId) => people.find((person) => person.userId === userId))
                       .filter((person): person is BoardPerson => Boolean(person))
-                    const barLabel = width >= 96 ? `#${number} · ${progress}%` : width >= 40 ? `${progress}%` : ''
+                    // La etiqueta siempre lleva el número: dentro de la barra si cabe, si no, al lado.
+                    const barLabel = `#${number} · ${progress}%`
+                    const labelWidthEstimate = barLabel.length * 6.4 + 14
+                    const labelInside = width >= labelWidthEstimate
+                    const labelOnLeft = !labelInside && left + width + 6 + labelWidthEstimate > timelineWidth
                     const description = `#${number} ${task.title}. ${formatDateKey(task.start_date!)} a ${formatDateKey(task.end_date!)}. ${columnStatusLabels[status]}, ${progress}%${critical ? ', ruta crítica' : ''}`
                     return (
                       <div key={task.id} className="gantt-row" style={{ gridTemplateColumns: `${labelWidth}px ${timelineWidth}px`, height: rowHeight }}>
-                        <div className="gantt-label gantt-sticky min-w-0 px-3 py-2 sm:px-5">
+                        <div className="gantt-label gantt-sticky min-w-0 overflow-hidden px-3 py-2 sm:px-5">
                           <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white sm:text-sm" title={task.title}>
                             <span className="mr-1.5 text-xs text-slate-500">#{number}</span>
                             {task.title}
@@ -381,8 +388,20 @@ function BoardGantt() {
                             aria-label={description}
                           >
                             <span className="gantt-bar-progress" style={{ width: `${progress}%` }} />
-                            {barLabel && <span className="gantt-bar-label">{barLabel}</span>}
+                            {labelInside && <span className="gantt-bar-label">{barLabel}</span>}
                           </div>
+                          {!labelInside && (
+                            <span
+                              className="gantt-bar-outside-label"
+                              aria-hidden="true"
+                              style={{
+                                top: rowHeight / 2,
+                                ...(labelOnLeft ? { right: timelineWidth - left + 6 } : { left: left + width + 6 }),
+                              }}
+                            >
+                              {barLabel}
+                            </span>
+                          )}
                         </div>
                       </div>
                     )
