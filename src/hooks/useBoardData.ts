@@ -8,9 +8,12 @@ import {
   type BoardMember,
 } from '../services/boardMembers'
 import { getBoardSnapshot, type BoardColumn } from '../services/columns'
+import { getBoardTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
+import { getBoardCommentStats, type CommentStats } from '../services/taskComments'
 import type { Task } from '../services/tasks'
 
 type TaskChange = { id?: string; column_id?: string }
+type AssigneeChange = { task_id?: string }
 
 /**
  * Columnas, tareas, miembros e invitaciones de un tablero, sincronizados por
@@ -22,6 +25,10 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
   const [tasksByColumn, setTasksByColumn] = useState<Record<string, Task[]>>({})
   const [members, setMembers] = useState<BoardMember[]>([])
   const [invitations, setInvitations] = useState<BoardInvitation[]>([])
+  const [assignments, setAssignments] = useState<TaskAssignments>({})
+  const [assigneesSupported, setAssigneesSupported] = useState(true)
+  const [commentStats, setCommentStats] = useState<CommentStats>({})
+  const [commentsSupported, setCommentsSupported] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -33,9 +40,17 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
   }, [columns, tasksByColumn])
 
   const loadContent = useCallback(async (targetBoardId: string) => {
-    const snapshot = await getBoardSnapshot(targetBoardId)
+    const [snapshot, assignees, comments] = await Promise.all([
+      getBoardSnapshot(targetBoardId),
+      getBoardTaskAssignees(targetBoardId),
+      getBoardCommentStats(targetBoardId),
+    ])
     setColumns(snapshot.columns)
     setTasksByColumn(snapshot.tasksByColumn)
+    setAssignments(assignees.assignments)
+    setAssigneesSupported(assignees.supported)
+    setCommentStats(comments.stats)
+    setCommentsSupported(comments.supported)
   }, [])
 
   const loadPeople = useCallback(async (targetBoardId: string) => {
@@ -64,6 +79,7 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
       setTasksByColumn({})
       setMembers([])
       setInvitations([])
+      setAssignments({})
       return
     }
 
@@ -103,6 +119,25 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
           (previous?.id && taskIdsRef.current.has(previous.id))
         if (touchesBoard) schedule('content')
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, (payload) => {
+        const next = payload.new as AssigneeChange
+        const previous = payload.old as AssigneeChange & { id?: string }
+        // Un DELETE solo trae la clave primaria: se recarga si la tarea es de este tablero o no se sabe.
+        if (!next?.task_id && !previous?.task_id) {
+          schedule('content')
+          return
+        }
+        if ([next?.task_id, previous?.task_id].some((taskId) => taskId && taskIdsRef.current.has(taskId))) {
+          schedule('content')
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_assignees' }, (payload) => {
+        const next = payload.new as AssigneeChange
+        const previous = payload.old as AssigneeChange
+        if ([next?.task_id, previous?.task_id].some((taskId) => taskId && taskIdsRef.current.has(taskId))) {
+          schedule('content')
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${boardId}` }, () => schedule('people'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'board_invitations', filter: `board_id=eq.${boardId}` }, () => schedule('people'))
       .subscribe((status) => {
@@ -125,6 +160,11 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
     setTasksByColumn,
     members,
     invitations,
+    assignments,
+    setAssignments,
+    assigneesSupported,
+    commentStats,
+    commentsSupported,
     loading,
     error,
     reload,

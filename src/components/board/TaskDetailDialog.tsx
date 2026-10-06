@@ -1,10 +1,14 @@
 import { useState, type FormEvent } from 'react'
 
 import Modal from '../ui/Modal'
+import AssigneeAvatars from './AssigneeAvatars'
+import AssigneePicker from './AssigneePicker'
+import TaskComments from './TaskComments'
 import TaskDescription from './TaskDescription'
 import { columnStatusLabels, resolveColumnStatus } from '../../domain/columnStatus'
 import { formatDateKey } from '../../domain/dates'
 import { descriptionField } from '../../domain/description'
+import type { BoardPerson } from '../../domain/people'
 import { priorityLabels } from '../../domain/priority'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { BoardColumn } from '../../services/columns'
@@ -19,6 +23,16 @@ interface TaskDetailDialogProps {
   canEdit: boolean
   initialMode: 'view' | 'edit'
   saving: boolean
+  /** Propietario y colaboradores que pueden ser responsables. */
+  people: BoardPerson[]
+  assignees: BoardPerson[]
+  canAssign: boolean
+  assigneesSupported: boolean
+  currentUserId: string | undefined
+  boardId: string
+  isBoardOwner: boolean
+  commentsSupported: boolean
+  onSaveAssignees: (userIds: string[]) => Promise<boolean>
   onSave: (input: TaskInput & { predecessorIds: string[] }) => Promise<boolean>
   onDelete: () => void
   onClose: () => void
@@ -33,6 +47,15 @@ function TaskDetailDialog({
   canEdit,
   initialMode,
   saving,
+  people,
+  assignees,
+  canAssign,
+  assigneesSupported,
+  currentUserId,
+  boardId,
+  isBoardOwner,
+  commentsSupported,
+  onSaveAssignees,
   onSave,
   onDelete,
   onClose,
@@ -47,6 +70,15 @@ function TaskDetailDialog({
     predecessorIds: task.predecessor_ids ?? [],
   })
   const [predecessorQuery, setPredecessorQuery] = useState('')
+  const [pickingAssignees, setPickingAssignees] = useState(false)
+  const [savingAssignees, setSavingAssignees] = useState(false)
+
+  async function handleSaveAssignees(userIds: string[]) {
+    setSavingAssignees(true)
+    const saved = await onSaveAssignees(userIds)
+    setSavingAssignees(false)
+    if (saved) setPickingAssignees(false)
+  }
 
   const column = columns.find((item) => item.id === task.column_id)
   const status = column ? resolveColumnStatus(column) : 'todo'
@@ -78,6 +110,51 @@ function TaskDetailDialog({
         {estimate && <span className="meta-chip">Peso {estimate}</span>}
         {scheduleInfo?.critical && <span className="critical-chip">◆ Ruta crítica</span>}
       </div>
+
+      <section className="assignee-section" aria-labelledby={`assignees-${task.id}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id={`assignees-${task.id}`} className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Responsables
+          </h3>
+          {canAssign && assigneesSupported && !pickingAssignees && (
+            <button type="button" onClick={() => setPickingAssignees(true)} className="btn-ghost px-3 py-1.5 text-xs">
+              {assignees.length ? 'Cambiar responsables' : '+ Asignar responsables'}
+            </button>
+          )}
+        </div>
+        {!assigneesSupported ? (
+          <p className="mt-2 text-sm text-[var(--text-muted)]">
+            Las asignaciones estarán disponibles cuando se aplique la migración de responsables en Supabase.
+          </p>
+        ) : pickingAssignees ? (
+          <div className="mt-3">
+            <AssigneePicker
+              people={people}
+              selectedIds={assignees.map((person) => person.userId)}
+              currentUserId={currentUserId}
+              saving={savingAssignees}
+              onSave={(userIds) => void handleSaveAssignees(userIds)}
+              onCancel={() => setPickingAssignees(false)}
+            />
+          </div>
+        ) : assignees.length === 0 ? (
+          <p className="mt-2 text-sm text-[var(--text-muted)]">
+            Sin responsables{canAssign ? '.' : '. Solo el propietario del tablero puede asignarlos.'}
+          </p>
+        ) : (
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {assignees.map((person) => (
+              <li key={person.userId} className="assignee-chip">
+                <AssigneeAvatars people={[person]} max={1} />
+                <span className="truncate">
+                  {person.name}
+                  {person.userId === currentUserId && <span className="text-[var(--text-muted)]"> (tú)</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <dl className="detail-grid">
         <div>
@@ -118,6 +195,22 @@ function TaskDetailDialog({
       <div>
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Descripción</h3>
         <TaskDescription text={task.description ?? ''} />
+      </div>
+
+      <div className="border-t border-white/10 pt-5">
+        {commentsSupported ? (
+          <TaskComments
+            boardId={boardId}
+            taskId={task.id}
+            currentUserId={currentUserId}
+            canComment={canEdit}
+            isBoardOwner={isBoardOwner}
+          />
+        ) : (
+          <p className="text-sm text-[var(--text-muted)]">
+            Los comentarios estarán disponibles cuando se aplique la migración de comentarios en Supabase.
+          </p>
+        )}
       </div>
     </div>
   )
@@ -236,6 +329,7 @@ function TaskDetailDialog({
       subtitle={mode === 'edit' ? task.title : undefined}
       onClose={onClose}
       size="xl"
+      focusFirstField={mode === 'edit'}
       footer={
         mode === 'edit' ? (
           <>

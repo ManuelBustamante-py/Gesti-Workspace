@@ -6,6 +6,7 @@ import {
   resolveColumnStatus,
   type ColumnStatus,
 } from '../../domain/columnStatus'
+import type { BoardPerson } from '../../domain/people'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { BoardColumn } from '../../services/columns'
 import type { Task, TaskPriority } from '../../services/tasks'
@@ -22,6 +23,9 @@ interface ColumnProps {
   numbers: Map<string, number>
   schedule: Map<string, TaskScheduleInfo>
   relations: Map<string, TaskRelation>
+  assignments: Record<string, string[]>
+  peopleById: Map<string, BoardPerson>
+  commentStats: Record<string, { total: number; alerts: number }>
   canEdit: boolean
   creatingTask: boolean
   movingTaskId: string | null
@@ -41,6 +45,9 @@ function Column({
   numbers,
   schedule,
   relations,
+  assignments,
+  peopleById,
+  commentStats,
   canEdit,
   creatingTask,
   movingTaskId,
@@ -192,6 +199,10 @@ function Column({
                 .filter((value): value is number => value !== undefined)}
               columns={columns}
               scheduleInfo={schedule.get(task.id)}
+              comments={commentStats[task.id]}
+              assignees={(assignments[task.id] ?? [])
+                .map((userId) => peopleById.get(userId))
+                .filter((person): person is BoardPerson => Boolean(person))}
               canEdit={canEdit}
               moving={movingTaskId === task.id}
               relation={relations.get(task.id) ?? null}

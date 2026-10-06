@@ -373,6 +373,8 @@ export async function exportBoardGanttWorkbook(
   board: Board,
   columns: BoardColumn[],
   tasksByColumn: Record<string, Task[]>,
+  /** Nombres de responsables por tarea (informativo; no se reimporta). */
+  assigneeNamesByTask: Record<string, string[]> = {},
 ) {
   const XLSX = await loadXlsx()
   const schedule = boardSchedule(board)
@@ -399,7 +401,8 @@ export async function exportBoardGanttWorkbook(
   const dates: string[] = []
   for (let date = firstDate; date <= lastDate; date = addDays(date, 1)) dates.push(date)
 
-  const timelineStart = 8
+  const timelineStart = 9
+  const assigneeText = (task: Task) => (assigneeNamesByTask[task.id] ?? []).join(', ')
   const lastColumn = timelineStart + dates.length - 1
   const predecessorText = (task: Task) =>
     (task.predecessor_ids ?? [])
@@ -418,16 +421,17 @@ export async function exportBoardGanttWorkbook(
     ],
     ['Leyenda', '', 'Ruta crítica', 'Normal', 'Avance', 'Completada', 'No laborable'],
     [],
-    ['', '', '', '', '', '', '', '', ...dates.map((date) =>
+    [...Array(timelineStart).fill(''), ...dates.map((date) =>
       weekdayNumber(date) === 2 ? formatDateKey(date, { day: 'numeric', month: 'short', year: 'numeric' }) : '',
     )],
-    ['', '', '', '', '', '', '', '', ...dates.map((date) => Number(date.slice(8, 10)))],
-    ['', '', '', '', '', '', '', '', ...dates.map((date) => WEEKDAY_INITIALS[weekdayNumber(date) - 1])],
-    ['N°', 'TAREA', 'COLUMNA', 'AVANCE', 'INICIO', 'FIN', 'DÍAS HÁB.', 'PRED.', ...blankTimeline()],
+    [...Array(timelineStart).fill(''), ...dates.map((date) => Number(date.slice(8, 10)))],
+    [...Array(timelineStart).fill(''), ...dates.map((date) => WEEKDAY_INITIALS[weekdayNumber(date) - 1])],
+    ['N°', 'TAREA', 'COLUMNA', 'RESPONSABLES', 'AVANCE', 'INICIO', 'FIN', 'DÍAS HÁB.', 'PRED.', ...blankTimeline()],
     ...scheduled.map(({ task, column }) => [
       numbers.get(task.id) ?? '',
       task.title,
       column.name,
+      assigneeText(task),
       { t: 'n' as const, v: columnStatusProgress[resolveColumnStatus(column)] / 100, z: '0%' },
       dateCell(task.start_date),
       dateCell(task.end_date),
@@ -439,7 +443,7 @@ export async function exportBoardGanttWorkbook(
 
   const sheet = XLSX.utils.aoa_to_sheet(rows)
   sheet['!cols'] = [
-    { wch: 5 }, { wch: 40 }, { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 },
+    { wch: 5 }, { wch: 40 }, { wch: 16 }, { wch: 20 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 },
     ...dates.map(() => ({ wch: 3.2 })),
   ]
   sheet['!merges'] = [
@@ -450,10 +454,10 @@ export async function exportBoardGanttWorkbook(
       e: { r: 4, c: timelineStart + week * 7 + 6 },
     })),
   ]
-  sheet['!autofilter'] = { ref: `A8:H${rows.length}` }
+  sheet['!autofilter'] = { ref: `A8:I${rows.length}` }
   sheet['!rows'] = [
     { hpt: 28 }, { hpt: 20 }, { hpt: 20 }, { hpt: 8 }, { hpt: 20 }, { hpt: 18 }, { hpt: 16 }, { hpt: 30 },
-    ...scheduled.map(({ task }) => ({ hpt: rowHeightFor([[task.title, 40]], 22) })),
+    ...scheduled.map(({ task }) => ({ hpt: rowHeightFor([[task.title, 40], [assigneeText(task).replaceAll(', ', '\n'), 20]], 22) })),
   ]
 
   styleRange(sheet, XLSX, 0, 0, lastColumn, {
@@ -513,8 +517,8 @@ export async function exportBoardGanttWorkbook(
       ...bodyStyle({ zebra, wrap: true }),
       font: { bold: critical, color: { rgb: critical ? COLORS.critical : COLORS.text } },
     })
-    styleRange(sheet, XLSX, r, 2, 2, bodyStyle({ zebra, wrap: true }))
-    styleRange(sheet, XLSX, r, 3, 3, {
+    styleRange(sheet, XLSX, r, 2, 3, bodyStyle({ zebra, wrap: true }))
+    styleRange(sheet, XLSX, r, 4, 4, {
       ...bodyStyle({ zebra, center: true }),
       font: { bold: true, color: { rgb: progress === 100 ? COLORS.complete : progress > 0 ? COLORS.normalDone : COLORS.muted } },
     })
@@ -542,7 +546,7 @@ export async function exportBoardGanttWorkbook(
   })
 
   // Hoja de datos: todas las tareas, con o sin fechas.
-  const dataHeaders = ['N° Tarea', 'Tarea', 'Columna', 'Estado', 'Prioridad', 'Fecha inicio', 'Fecha fin', 'Días hábiles', 'Predecesoras', 'Holgura (días háb.)', 'Ruta crítica', 'Observación']
+  const dataHeaders = ['N° Tarea', 'Tarea', 'Columna', 'Responsables', 'Estado', 'Prioridad', 'Fecha inicio', 'Fecha fin', 'Días hábiles', 'Predecesoras', 'Holgura (días háb.)', 'Ruta crítica', 'Observación']
   const dataRows: CellValue[][] = allTasks.map(({ task, column }) => {
     const info = projectSchedule.tasks.get(task.id)
     const observations = [
@@ -554,6 +558,7 @@ export async function exportBoardGanttWorkbook(
       numbers.get(task.id) ?? '',
       task.title,
       column.name,
+      assigneeText(task),
       columnStatusLabels[resolveColumnStatus(column)],
       priorityLabel[task.priority],
       dateCell(task.start_date),
@@ -566,18 +571,19 @@ export async function exportBoardGanttWorkbook(
     ]
   })
   const dataSheet = XLSX.utils.aoa_to_sheet([dataHeaders, ...dataRows])
-  const dataWidths = [9, 40, 16, 13, 10, 12, 12, 11, 13, 13, 11, 42]
+  const dataWidths = [9, 40, 16, 22, 13, 10, 12, 12, 11, 13, 13, 11, 42]
   dataSheet['!cols'] = dataWidths.map((wch) => ({ wch }))
-  dataSheet['!autofilter'] = { ref: `A1:L${dataRows.length + 1}` }
+  dataSheet['!autofilter'] = { ref: `A1:M${dataRows.length + 1}` }
   dataSheet['!rows'] = [{ hpt: 30 }, ...allTasks.map(({ task }) => ({ hpt: rowHeightFor([[task.title, 40]], 20) }))]
   styleRange(dataSheet, XLSX, 0, 0, dataHeaders.length - 1, headerStyle)
   dataRows.forEach((row, index) => {
     const zebra = index % 2 === 1
     styleRange(dataSheet, XLSX, index + 1, 0, dataHeaders.length - 1, bodyStyle({ zebra, center: true }))
     styleRange(dataSheet, XLSX, index + 1, 1, 1, bodyStyle({ zebra, wrap: true }))
-    styleRange(dataSheet, XLSX, index + 1, 11, 11, bodyStyle({ zebra, wrap: true }))
-    if (row[10] === 'Sí') {
-      styleRange(dataSheet, XLSX, index + 1, 10, 10, {
+    styleRange(dataSheet, XLSX, index + 1, 3, 3, bodyStyle({ zebra, wrap: true }))
+    styleRange(dataSheet, XLSX, index + 1, 12, 12, bodyStyle({ zebra, wrap: true }))
+    if (row[11] === 'Sí') {
+      styleRange(dataSheet, XLSX, index + 1, 11, 11, {
         ...bodyStyle({ zebra, center: true }),
         font: { bold: true, color: { rgb: COLORS.critical } },
       })
@@ -627,7 +633,8 @@ export function normalizeImportedDate(value: unknown, context: string): string |
   return key
 }
 
-const KNOWN_IMPORT_HEADERS = new Set<string>([...WORKBOOK_HEADERS, 'N° actividad', 'Fecha vencimiento'])
+// «Responsables» se ignora: se asignan desde la plataforma, por cuenta de cada colaborador.
+const KNOWN_IMPORT_HEADERS = new Set<string>([...WORKBOOK_HEADERS, 'N° actividad', 'Fecha vencimiento', 'Responsables'])
 
 function cellText(value: unknown) {
   return String(value ?? '').replace(/\r\n?/g, '\n').trim()
@@ -703,6 +710,10 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
     tasksByNumber.set(activityNumber, task)
     nextActivityNumber = Math.max(nextActivityNumber + 1, activityNumber + 1)
   })
+
+  if (rows.some((row) => cellText(row.Responsables))) {
+    warnings.push('La columna «Responsables» no se importa: asígnalos desde el detalle de cada tarea.')
+  }
 
   tasksByNumber.forEach((task) => {
     task.predecessorNumbers = task.predecessorNumbers.filter((number) => {

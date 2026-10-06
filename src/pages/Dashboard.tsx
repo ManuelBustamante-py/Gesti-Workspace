@@ -19,6 +19,7 @@ import { activityNumbers } from '../domain/numbering'
 import { boardPermissions, resolveBoardRole, roleEmotes, roleLabels, type BoardRole } from '../domain/roles'
 import { computeSchedule } from '../domain/schedule'
 import { boardWorkingDays } from '../domain/workSchedule'
+import { assigneeNames, buildBoardPeople, type BoardPerson } from '../domain/people'
 import {
   createBoard,
   deleteBoard,
@@ -30,6 +31,7 @@ import {
 } from '../services/boards'
 import {
   cancelBoardInvitation,
+  getBoardMembers,
   getReceivedBoardInvitations,
   inviteBoardMember,
   removeBoardMember,
@@ -54,10 +56,12 @@ import {
   updateBoardColumn,
 } from '../services/columns'
 import { getProfile, syncProfileFromAuthUser, type Profile } from '../services/profiles'
+import { getBoardTaskAssignees, setTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
 import { createTask, deleteTask, moveTask, updateTask, type Task, type TaskInput } from '../services/tasks'
 
 type View = 'boards' | 'create' | 'requests'
 type OpenTask = { id: string; mode: 'view' | 'edit' }
+type AssigneeFilter = 'all' | 'mine' | 'unassigned'
 
 function errorMessage(err: unknown, fallback: string) {
   if (err instanceof Error) return err.message
@@ -118,10 +122,11 @@ function Dashboard() {
   const [savingTask, setSavingTask] = useState(false)
   const [openTask, setOpenTask] = useState<OpenTask | null>(null)
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null)
+  const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('all')
 
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
-  const { columns, tasksByColumn, setColumns, setTasksByColumn, members, invitations } = boardData
+  const { columns, tasksByColumn, setColumns, setTasksByColumn, members, invitations, assignments, setAssignments } = boardData
 
   const role: BoardRole = resolveBoardRole(selectedBoard, user?.id, members)
   const { canEditContent, canManageBoard } = boardPermissions(role)
@@ -132,6 +137,42 @@ function Dashboard() {
     () => computeSchedule(allTasks, boardWorkingDays(selectedBoard)),
     [allTasks, selectedBoard],
   )
+  const ownerProfileForBoard = selectedBoard?.owner_id === user?.id ? profile : boardOwnerProfile
+  const people = useMemo<BoardPerson[]>(
+    () =>
+      selectedBoard
+        ? buildBoardPeople(
+            selectedBoard.owner_id,
+            ownerProfileForBoard,
+            selectedBoard.owner_id === user?.id ? user?.email ?? 'Propietario' : 'Propietario',
+            members,
+          )
+        : [],
+    [members, ownerProfileForBoard, selectedBoard, user?.email, user?.id],
+  )
+  const peopleById = useMemo(() => new Map(people.map((person) => [person.userId, person])), [people])
+  const currentUserId = user?.id
+  const assignmentCounts = useMemo(() => {
+    let mine = 0
+    let unassigned = 0
+    allTasks.forEach((task) => {
+      const assignees = assignments[task.id] ?? []
+      if (currentUserId && assignees.includes(currentUserId)) mine += 1
+      if (assignees.length === 0) unassigned += 1
+    })
+    return { mine, unassigned }
+  }, [allTasks, assignments, currentUserId])
+  const visibleTasksByColumn = useMemo(() => {
+    if (assigneeFilter === 'all') return tasksByColumn
+    const matches = (task: Task) => {
+      const assignees = assignments[task.id] ?? []
+      return assigneeFilter === 'mine' ? Boolean(currentUserId && assignees.includes(currentUserId)) : assignees.length === 0
+    }
+    return Object.fromEntries(
+      Object.entries(tasksByColumn).map(([columnId, tasks]) => [columnId, tasks.filter(matches)]),
+    )
+  }, [assigneeFilter, assignments, tasksByColumn, currentUserId])
+
   const relations = useMemo(() => {
     const result = new Map<string, TaskRelation>()
     if (!selectedRelationId) return result
@@ -240,6 +281,7 @@ function Dashboard() {
     setSettingsCollapsed(readSettingsCollapsed(boardId))
     setOpenTask(null)
     setSelectedRelationId(null)
+    setAssigneeFilter('all')
     setBoardError('')
     window.history.replaceState(null, '', `${window.location.pathname}#board-${boardId}`)
   }
@@ -337,14 +379,36 @@ function Dashboard() {
     }
   }
 
-  async function withBoardContent(board: Board, action: (columns: typeof boardData.columns, tasks: Record<string, Task[]>) => Promise<void>) {
+  /** Nombres de responsables por tarea; para tableros no abiertos se consultan al exportar. */
+  async function loadAssigneeNames(board: Board): Promise<Record<string, string[]>> {
+    let boardAssignments: TaskAssignments = assignments
+    let boardPeople = people
+    if (board.id !== selectedBoardId) {
+      const [loaded, boardMembers, ownerProfile] = await Promise.all([
+        getBoardTaskAssignees(board.id),
+        getBoardMembers(board.id),
+        board.owner_id === user?.id ? Promise.resolve(profile) : getProfile(board.owner_id).catch(() => null),
+      ])
+      boardAssignments = loaded.assignments
+      boardPeople = buildBoardPeople(board.owner_id, ownerProfile, 'Propietario', boardMembers)
+    }
+    return Object.fromEntries(
+      Object.entries(boardAssignments).map(([taskId, userIds]) => [taskId, assigneeNames(userIds, boardPeople)]),
+    )
+  }
+
+  async function withBoardContent(
+    board: Board,
+    action: (columns: typeof boardData.columns, tasks: Record<string, Task[]>, names: Record<string, string[]>) => Promise<void>,
+  ) {
     try {
       setError('')
       setBoardError('')
       const snapshot = board.id === selectedBoardId
         ? { columns, tasksByColumn }
         : await getBoardSnapshot(board.id)
-      await action(snapshot.columns, snapshot.tasksByColumn)
+      const names = await loadAssigneeNames(board)
+      await action(snapshot.columns, snapshot.tasksByColumn, names)
     } catch (err) {
       const message = errorMessage(err, 'No se pudo exportar el tablero.')
       if (board.id === selectedBoardId) setBoardError(message)
@@ -565,6 +629,22 @@ function Dashboard() {
       setBoardError(errorMessage(err, 'No se pudo eliminar la tarea.'))
     }
   }, [setTasksByColumn])
+
+  async function handleSaveAssignees(task: Task, userIds: string[]) {
+    const previous = assignments[task.id] ?? []
+    try {
+      setBoardError('')
+      setAssignments((current) => ({ ...current, [task.id]: userIds }))
+      await setTaskAssignees(task.id, userIds)
+      return true
+    } catch (err) {
+      setAssignments((current) => ({ ...current, [task.id]: previous }))
+      const message = errorMessage(err, 'No se pudieron asignar los responsables.')
+      setBoardError(message)
+      window.alert(message)
+      return false
+    }
+  }
 
   const handleOpenTask = useCallback((task: Task, mode: 'view' | 'edit') => setOpenTask({ id: task.id, mode }), [])
   const handleToggleRelation = useCallback(
@@ -823,7 +903,7 @@ function Dashboard() {
                             <button type="button" onClick={() => openBoard(board.id)} className="btn-mint-primary px-3 py-1.5 text-sm font-semibold">Abrir</button>
                             <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-3 py-1.5 text-sm">Gantt</Link>
                             <button type="button" onClick={() => void withBoardContent(board, (cols, tasks) => exportBoardWorkbook(board, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">XLSX</button>
-                            <button type="button" onClick={() => void withBoardContent(board, (cols, tasks) => exportBoardGanttWorkbook(board, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
+                            <button type="button" onClick={() => void withBoardContent(board, (cols, tasks, names) => exportBoardGanttWorkbook(board, cols, tasks, names))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
                             {isOwner && (
                               <>
                                 <button type="button" onClick={() => setEditingBoard(board)} className="btn-ghost px-3 py-1.5 text-sm">Editar</button>
@@ -852,7 +932,7 @@ function Dashboard() {
                 <div className="board-toolbar">
                   <Link to={`/dashboard/gantt/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Diagrama Gantt</Link>
                   <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks) => exportBoardWorkbook(selectedBoard, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">XLSX</button>
-                  <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks) => exportBoardGanttWorkbook(selectedBoard, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
+                  <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks, names) => exportBoardGanttWorkbook(selectedBoard, cols, tasks, names))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
                   <button type="button" onClick={() => setCollaboratorsOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">Colaboradores</button>
                   {canManageBoard && (
                     <button type="button" onClick={() => setEditingBoard(selectedBoard)} className="btn-ghost px-3 py-1.5 text-sm">Editar</button>
@@ -864,7 +944,7 @@ function Dashboard() {
               {selectedBoard.description && <p className="mt-3 text-sm text-slate-400">{selectedBoard.description}</p>}
 
               <div className="mt-5">
-                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} />
+                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} assignments={assignments} people={people} currentUserId={user?.id} commentStats={boardData.commentStats} />
               </div>
 
               <div className="mt-5 rounded-xl border border-white/5">
@@ -915,6 +995,25 @@ function Dashboard() {
 
               <div className="mt-6">
                 <h3 className="sr-only">Columnas</h3>
+                {boardData.assigneesSupported && columns.length > 0 && (
+                  <div className="filter-chips mb-4" role="group" aria-label="Filtrar tareas por responsable">
+                    {([
+                      ['all', 'Todas', allTasks.length],
+                      ['mine', 'Asignadas a mí', assignmentCounts.mine],
+                      ['unassigned', 'Sin responsable', assignmentCounts.unassigned],
+                    ] as const).map(([value, label, count]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAssigneeFilter(value)}
+                        aria-pressed={assigneeFilter === value}
+                        className={`filter-chip ${assigneeFilter === value ? 'filter-chip-active' : ''}`}
+                      >
+                        {label} <span className="filter-chip-count">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {boardData.loading ? (
                   <p className="text-slate-400">Cargando columnas...</p>
                 ) : columns.length === 0 ? (
@@ -932,11 +1031,14 @@ function Dashboard() {
                       <Column
                         key={column.id}
                         column={column}
-                        tasks={tasksByColumn[column.id] ?? []}
+                        tasks={visibleTasksByColumn[column.id] ?? []}
                         columns={columns}
                         numbers={numbers}
                         schedule={schedule.tasks}
                         relations={relations}
+                        assignments={assignments}
+                        peopleById={peopleById}
+                        commentStats={boardData.commentStats}
                         canEdit={canEditContent}
                         creatingTask={creatingTaskColumnId === column.id}
                         movingTaskId={movingTaskId}
@@ -968,6 +1070,17 @@ function Dashboard() {
           canEdit={canEditContent}
           initialMode={openTask.mode}
           saving={savingTask}
+          people={people}
+          assignees={(assignments[openTaskData.id] ?? [])
+            .map((userId) => peopleById.get(userId))
+            .filter((person): person is BoardPerson => Boolean(person))}
+          canAssign={canManageBoard}
+          assigneesSupported={boardData.assigneesSupported}
+          currentUserId={user?.id}
+          boardId={selectedBoard?.id ?? ''}
+          isBoardOwner={canManageBoard}
+          commentsSupported={boardData.commentsSupported}
+          onSaveAssignees={(userIds) => handleSaveAssignees(openTaskData, userIds)}
           onSave={(input) => handleSaveTask(openTaskData, input)}
           onDelete={() => void handleDeleteTask(openTaskData)}
           onClose={() => setOpenTask(null)}

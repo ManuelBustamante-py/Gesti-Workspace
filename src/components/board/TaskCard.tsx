@@ -1,10 +1,12 @@
 import { memo } from 'react'
 
 import { formatDateKey } from '../../domain/dates'
+import type { BoardPerson } from '../../domain/people'
 import { descriptionField, descriptionSummary } from '../../domain/description'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { Task } from '../../services/tasks'
 import { priorityLabels } from '../../domain/priority'
+import AssigneeAvatars from './AssigneeAvatars'
 
 export type TaskRelation = 'selected' | 'related' | 'dimmed' | null
 
@@ -14,6 +16,8 @@ interface TaskCardProps {
   predecessorNumbers: number[]
   columns: { id: string; name: string }[]
   scheduleInfo?: TaskScheduleInfo
+  assignees: BoardPerson[]
+  comments?: { total: number; alerts: number }
   canEdit: boolean
   moving: boolean
   relation: TaskRelation
@@ -31,6 +35,8 @@ function TaskCard({
   predecessorNumbers,
   columns,
   scheduleInfo,
+  assignees,
+  comments,
   canEdit,
   moving,
   relation,
@@ -78,6 +84,19 @@ function TaskCard({
         {sprint && <span className="meta-chip">{sprint}</span>}
         {estimate && <span className="meta-chip">Peso {estimate.replace(/\s*\(.*\)/, '')}</span>}
         {scheduleInfo?.critical && <span className="critical-chip" title="Ruta crítica">◆ Crítica</span>}
+        {comments && comments.alerts > 0 && (
+          <span className="alert-chip" title="Tiene problemas o parches temporales reportados en los comentarios">
+            ⚠ {comments.alerts} {comments.alerts === 1 ? 'aviso' : 'avisos'}
+          </span>
+        )}
+        {comments && comments.total > 0 && (
+          <span className="meta-chip" title={`${comments.total} comentario(s)`}>💬 {comments.total}</span>
+        )}
+        {assignees.length > 0 && (
+          <span className="ml-auto">
+            <AssigneeAvatars people={assignees} />
+          </span>
+        )}
       </div>
 
       {(task.start_date || task.end_date) && (

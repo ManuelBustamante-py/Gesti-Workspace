@@ -8,7 +8,8 @@ import {
   type ColumnStatus,
 } from '../../domain/columnStatus'
 import { addDays, todayKey } from '../../domain/dates'
-import { progressMilestone } from '../../domain/roles'
+import type { BoardPerson } from '../../domain/people'
+import { progressMilestone, roleEmotes } from '../../domain/roles'
 import type { ProjectSchedule } from '../../domain/schedule'
 import type { BoardColumn } from '../../services/columns'
 import type { Task, TaskPriority } from '../../services/tasks'
@@ -17,13 +18,17 @@ interface BoardStatsProps {
   columns: BoardColumn[]
   tasksByColumn: Record<string, Task[]>
   schedule: ProjectSchedule
+  assignments: Record<string, string[]>
+  people: BoardPerson[]
+  currentUserId: string | undefined
+  commentStats: Record<string, { total: number; alerts: number }>
 }
 
 const statusIcons: Record<ColumnStatus, string> = { todo: '○', in_progress: '◐', done: '●' }
 const priorityOrder: TaskPriority[] = ['high', 'medium', 'low']
 const priorityText: Record<TaskPriority, string> = { high: 'Alta', medium: 'Media', low: 'Baja' }
 
-function BoardStats({ columns, tasksByColumn, schedule }: BoardStatsProps) {
+function BoardStats({ columns, tasksByColumn, schedule, assignments, people, currentUserId, commentStats }: BoardStatsProps) {
   const stats = useMemo(() => {
     const today = todayKey()
     const nextWeek = addDays(today, 7)
@@ -64,8 +69,22 @@ function BoardStats({ columns, tasksByColumn, schedule }: BoardStatsProps) {
       cycles: schedule.cyclicTaskIds.size,
       percent: total ? Math.round(progressSum / total) : 0,
       undated: entries.filter(({ task }) => !task.start_date || !task.end_date).length,
+      unassignedPending: entries.filter(({ task, status }) => status !== 'done' && !(assignments[task.id]?.length)).length,
+      withAlerts: entries.filter(({ task }) => (commentStats[task.id]?.alerts ?? 0) > 0).length,
+      // Carga por persona: tareas pendientes y completadas asignadas a cada una.
+      workload: people
+        .map((person) => {
+          const assigned = entries.filter(({ task }) => assignments[task.id]?.includes(person.userId))
+          return {
+            person,
+            pending: assigned.filter(({ status }) => status !== 'done').length,
+            done: assigned.filter(({ status }) => status === 'done').length,
+          }
+        })
+        .filter((item) => item.pending + item.done > 0)
+        .sort((left, right) => right.pending - left.pending || right.done - left.done),
     }
-  }, [columns, tasksByColumn, schedule])
+  }, [assignments, columns, commentStats, people, tasksByColumn, schedule])
 
   if (stats.total === 0) {
     return (
@@ -149,17 +168,39 @@ function BoardStats({ columns, tasksByColumn, schedule }: BoardStatsProps) {
             ))}
           </ul>
         </div>
-        {(stats.overlaps > 0 || stats.cycles > 0 || stats.undated > 0) && (
+        {(stats.overlaps > 0 || stats.cycles > 0 || stats.undated > 0 || stats.unassignedPending > 0 || stats.withAlerts > 0) && (
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Revisar planificación</h4>
             <ul className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
               {stats.overlaps > 0 && <li>⚠ {stats.overlaps} tarea(s) empiezan antes de que termine su predecesora.</li>}
               {stats.cycles > 0 && <li>⚠ {stats.cycles} tarea(s) forman un ciclo de dependencias.</li>}
               {stats.undated > 0 && <li>○ {stats.undated} tarea(s) sin fechas no aparecen en el Gantt.</li>}
+              {stats.withAlerts > 0 && <li>⚠ {stats.withAlerts} tarea(s) con problemas o parches temporales reportados.</li>}
+              {stats.unassignedPending > 0 && <li>○ {stats.unassignedPending} tarea(s) pendientes sin responsable.</li>}
             </ul>
           </div>
         )}
       </div>
+
+      {stats.workload.length > 0 && (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Carga por responsable</h4>
+          <ul className="workload-list mt-2">
+            {stats.workload.map(({ person, pending, done }) => (
+              <li key={person.userId} className="workload-item">
+                <span className="min-w-0 truncate">
+                  <span aria-hidden="true">{roleEmotes[person.role]} </span>
+                  {person.name}
+                  {person.userId === currentUserId && <span className="text-[var(--text-muted)]"> (tú)</span>}
+                </span>
+                <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                  <strong className="text-[var(--text-main)]">{pending}</strong> pendiente{pending === 1 ? '' : 's'} · {done} completada{done === 1 ? '' : 's'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

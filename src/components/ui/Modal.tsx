@@ -7,6 +7,8 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   size?: 'md' | 'lg' | 'xl'
+  /** Enfoca el primer campo al abrir (formularios). Si no, se enfoca el diálogo: no abre el teclado en móvil. */
+  focusFirstField?: boolean
 }
 
 const FOCUSABLE =
@@ -17,10 +19,12 @@ const FOCUSABLE =
  * inicial dentro, Tab contenido y foco devuelto al cerrar. En móvil ocupa la
  * pantalla completa (ver .modal-panel en index.css).
  */
-function Modal({ title, subtitle, onClose, children, footer, size = 'lg' }: ModalProps) {
+function Modal({ title, subtitle, onClose, children, footer, size = 'lg', focusFirstField = false }: ModalProps) {
   const titleId = useId()
   const panelRef = useRef<HTMLElement>(null)
   const onCloseRef = useRef(onClose)
+  // Solo cuenta al abrir: el enfoque inicial no se repite si cambia después.
+  const focusFirstFieldRef = useRef(focusFirstField)
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
@@ -28,9 +32,8 @@ function Modal({ title, subtitle, onClose, children, footer, size = 'lg' }: Moda
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null
     const panel = panelRef.current
-    const firstField = panel?.querySelector<HTMLElement>('input, select, textarea') ??
-      panel?.querySelector<HTMLElement>(FOCUSABLE)
-    firstField?.focus()
+    const firstField = focusFirstFieldRef.current ? panel?.querySelector<HTMLElement>('input, select, textarea') : null
+    ;(firstField ?? panel)?.focus()
     document.body.style.overflow = 'hidden'
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -73,6 +76,7 @@ function Modal({ title, subtitle, onClose, children, footer, size = 'lg' }: Moda
         ref={panelRef}
         className={`modal-panel modal-panel-${size} glass-panel`}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
       >

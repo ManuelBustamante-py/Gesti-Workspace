@@ -6,14 +6,16 @@ import { useBoardData } from '../hooks/useBoardData'
 import { columnStatusLabels, columnStatusProgress, resolveColumnStatus } from '../domain/columnStatus'
 import { addDays, diffDays, formatDateKey, startOfWeek, todayKey } from '../domain/dates'
 import { activityNumbers } from '../domain/numbering'
+import { assigneeNames, buildBoardPeople } from '../domain/people'
 import { computeSchedule } from '../domain/schedule'
 import { boardSchedule, describeWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
 import { exportBoardGanttWorkbook } from '../services/boardWorkbook'
+import { getProfile, type Profile } from '../services/profiles'
 
 const WEEK_WIDTH = 126
 const DAY_WIDTH = WEEK_WIDTH / 7
-const ROW_HEIGHT = 64
+const ROW_HEIGHT = 76
 const BAR_HEIGHT = 26
 
 function useIsNarrow() {
@@ -47,6 +49,7 @@ function BoardGantt() {
   const [boardError, setBoardError] = useState('')
   const [loadingBoard, setLoadingBoard] = useState(true)
   const [exportError, setExportError] = useState('')
+  const [ownerProfile, setOwnerProfile] = useState<Profile | null>(null)
 
   useEffect(() => {
     if (!boardId || !user) return
@@ -64,7 +67,26 @@ function BoardGantt() {
     }
   }, [boardId, user])
 
-  const { columns, tasksByColumn, loading, error } = useBoardData(board?.id ?? null, Boolean(board))
+  const { columns, tasksByColumn, members, assignments, loading, error } = useBoardData(board?.id ?? null, Boolean(board))
+
+  useEffect(() => {
+    if (!board) return
+    let cancelled = false
+    getProfile(board.owner_id)
+      .then((profile) => !cancelled && setOwnerProfile(profile))
+      .catch(() => !cancelled && setOwnerProfile(null))
+    return () => {
+      cancelled = true
+    }
+  }, [board])
+
+  const namesByTask = useMemo(() => {
+    if (!board) return {}
+    const people = buildBoardPeople(board.owner_id, ownerProfile, 'Propietario', members)
+    return Object.fromEntries(
+      Object.entries(assignments).map(([taskId, userIds]) => [taskId, assigneeNames(userIds, people)]),
+    )
+  }, [assignments, board, members, ownerProfile])
   const workingDays = useMemo(() => (board ? boardSchedule(board).working_days : []), [board])
   const numbers = useMemo(() => activityNumbers(columns, tasksByColumn), [columns, tasksByColumn])
   const allTasks = useMemo(
@@ -136,7 +158,7 @@ function BoardGantt() {
           <button
             type="button"
             onClick={() =>
-              void exportBoardGanttWorkbook(board, columns, tasksByColumn).catch((err) =>
+              void exportBoardGanttWorkbook(board, columns, tasksByColumn, namesByTask).catch((err) =>
                 setExportError(err instanceof Error ? err.message : 'No se pudo exportar.'),
               )
             }
@@ -233,6 +255,11 @@ function BoardGantt() {
                             {critical && <span className="ml-1 text-[var(--critical)]">◆ crítica</span>}
                             {info?.startsBeforePredecessor && <span className="ml-1 text-[var(--priority-medium)]">⚠ solapada</span>}
                           </p>
+                          {(namesByTask[task.id]?.length ?? 0) > 0 && (
+                            <p className="truncate text-[11px] text-slate-400" title={namesByTask[task.id].join(', ')}>
+                              👤 {namesByTask[task.id].join(', ')}
+                            </p>
+                          )}
                         </div>
                         <div className="relative" style={{ backgroundImage: nonWorkingBackground(workingDays), backgroundSize: `${WEEK_WIDTH}px 100%` }}>
                           <div

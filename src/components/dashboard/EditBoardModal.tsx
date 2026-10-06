@@ -32,6 +32,7 @@ function EditBoardModal({ board, onSave, onClose }: EditBoardModalProps) {
     <Modal
       title="Editar tablero"
       size="md"
+      focusFirstField
       onClose={onClose}
       footer={
         <>

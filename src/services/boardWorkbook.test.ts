@@ -49,6 +49,12 @@ describe('parseImportedRows', () => {
     expect(board.columns[0].tasks[0].description).toBe('Intro\n\n▌Criterios de aceptación\n1. Uno\n2. Dos')
   })
 
+  it('ignora la columna Responsables y lo avisa', () => {
+    const { board, warnings } = parseImportedRows([{ ...row(1, 'A', 'X'), Responsables: 'Ana' }], 'f.xlsx')
+    expect(board.columns[0].tasks[0].description).toBe('▌SPRINT\nSprint 1')
+    expect(warnings).toEqual(['La columna «Responsables» no se importa: asígnalos desde el detalle de cada tarea.'])
+  })
+
   it('avisa de predecesoras inexistentes y las descarta', () => {
     const { board, warnings } = parseImportedRows([row(1, 'A', 'X', '1, 9')], 'f.xlsx')
     expect(board.columns[0].tasks[0].predecessorNumbers).toEqual([])
