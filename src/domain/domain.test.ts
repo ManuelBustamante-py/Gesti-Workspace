@@ -11,7 +11,7 @@ import {
   taskDuration,
   weekdayNumber,
 } from './dates'
-import { createsDependencyCycle, findCycle } from './dependencies'
+import { createsDependencyCycle, findCycle, relationsFor } from './dependencies'
 import {
   composeDescription,
   descriptionField,
@@ -99,6 +99,31 @@ describe('dependencies', () => {
     expect(createsDependencyCycle(tasks, 'a', ['c'])).toBe(true)
     expect(createsDependencyCycle(tasks, 'c', ['a'])).toBe(false)
     expect(findCycle(new Map([['x', ['x']]]))).toEqual(['x'])
+  })
+})
+
+describe('relationsFor', () => {
+  const tasks = [
+    { id: '4', predecessor_ids: [] },
+    { id: '5', predecessor_ids: ['4'] },
+    { id: '6', predecessor_ids: ['5'] },
+    { id: '7', predecessor_ids: ['5'] },
+    { id: '8', predecessor_ids: ['6', '7'] },
+  ]
+
+  it('distingue predecesoras, sucesoras y el resto', () => {
+    expect(Object.fromEntries(relationsFor(tasks, '5'))).toEqual({
+      '4': 'predecessor',
+      '5': 'selected',
+      '6': 'successor',
+      '7': 'successor',
+      '8': 'dimmed',
+    })
+  })
+
+  it('sin selección no resalta nada', () => {
+    expect(relationsFor(tasks, null).size).toBe(0)
+    expect(relationsFor(tasks, 'inexistente').size).toBe(0)
   })
 })
 

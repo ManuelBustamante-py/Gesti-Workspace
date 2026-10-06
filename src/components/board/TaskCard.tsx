@@ -3,12 +3,13 @@ import { memo } from 'react'
 import { formatDateKey } from '../../domain/dates'
 import type { BoardPerson } from '../../domain/people'
 import { descriptionField, descriptionSummary } from '../../domain/description'
+import type { TaskRelation } from '../../domain/dependencies'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { Task } from '../../services/tasks'
 import { priorityLabels } from '../../domain/priority'
 import AssigneeAvatars from './AssigneeAvatars'
 
-export type TaskRelation = 'selected' | 'related' | 'dimmed' | null
+export type { TaskRelation } from '../../domain/dependencies'
 
 interface TaskCardProps {
   task: Task
@@ -20,7 +21,7 @@ interface TaskCardProps {
   comments?: { total: number; alerts: number }
   canEdit: boolean
   moving: boolean
-  relation: TaskRelation
+  relation: TaskRelation | null
   onOpen: (task: Task, mode: 'view' | 'edit') => void
   onMove: (task: Task, columnId: string) => void
   onDelete: (task: Task) => void
@@ -52,14 +53,14 @@ function TaskCard({
   return (
     <article
       className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' ? 'opacity-40' : ''} ${
-        relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : ''
+        relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : relation === 'predecessor' ? 'task-card-predecessor' : relation === 'successor' ? 'task-card-successor' : ''
       }`}
     >
       <div className="flex items-start gap-2">
         <button
           type="button"
           onClick={() => onToggleRelation(task.id)}
-          className={`task-number ${relation === 'selected' ? 'task-number-selected' : relation === 'related' ? 'task-number-related' : ''}`}
+          className={`task-number ${relation && relation !== 'dimmed' ? `task-number-${relation}` : ''}`}
           aria-pressed={relation === 'selected'}
           aria-label={`Resaltar predecesoras y sucesoras de la tarea ${number ?? ''}`}
           title="Resaltar predecesoras y sucesoras"

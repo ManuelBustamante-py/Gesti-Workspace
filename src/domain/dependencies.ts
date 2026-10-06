@@ -44,3 +44,23 @@ export function findCycle(dependencies: Map<string, string[]>) {
   }
   return null
 }
+
+export type TaskRelation = 'selected' | 'predecessor' | 'successor' | 'dimmed'
+
+/**
+ * Relación de cada tarea con la seleccionada: sus predecesoras directas, sus
+ * sucesoras directas y el resto atenuado. Sin selección devuelve un mapa vacío.
+ */
+export function relationsFor(tasks: DependencyNode[], selectedId: string | null) {
+  const relations = new Map<string, TaskRelation>()
+  const selected = selectedId ? tasks.find((task) => task.id === selectedId) : undefined
+  if (!selected) return relations
+  const predecessors = new Set(selected.predecessor_ids ?? [])
+  tasks.forEach((task) => {
+    if (task.id === selected.id) relations.set(task.id, 'selected')
+    else if (predecessors.has(task.id)) relations.set(task.id, 'predecessor')
+    else if ((task.predecessor_ids ?? []).includes(selected.id)) relations.set(task.id, 'successor')
+    else relations.set(task.id, 'dimmed')
+  })
+  return relations
+}

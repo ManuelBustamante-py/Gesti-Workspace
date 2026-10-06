@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
 import { useMessageNotifications, type MessageToast } from '../hooks/useMessageNotifications'
 import Column, { type TaskDraft } from '../components/board/Column'
-import type { TaskRelation } from '../components/board/TaskCard'
 import TaskDetailDialog from '../components/board/TaskDetailDialog'
 import BoardScheduleForm from '../components/dashboard/BoardScheduleForm'
 import BoardStats from '../components/dashboard/BoardStats'
@@ -17,7 +16,7 @@ import MessagesPanel from '../components/dashboard/MessagesPanel'
 import ToastStack from '../components/ui/ToastStack'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
 import type { ColumnStatus } from '../domain/columnStatus'
-import { createsDependencyCycle } from '../domain/dependencies'
+import { createsDependencyCycle, relationsFor } from '../domain/dependencies'
 import { prependUniqueById } from '../domain/collections'
 import { activityNumbers } from '../domain/numbering'
 import { boardPermissions, resolveBoardRole, roleEmotes, roleLabels, type BoardRole } from '../domain/roles'
@@ -194,20 +193,7 @@ function Dashboard() {
     )
   }, [assigneeFilter, assignments, tasksByColumn, currentUserId])
 
-  const relations = useMemo(() => {
-    const result = new Map<string, TaskRelation>()
-    if (!selectedRelationId) return result
-    const selected = allTasks.find((task) => task.id === selectedRelationId)
-    if (!selected) return result
-    const related = new Set([
-      ...(selected.predecessor_ids ?? []),
-      ...allTasks.filter((task) => (task.predecessor_ids ?? []).includes(selectedRelationId)).map((task) => task.id),
-    ])
-    allTasks.forEach((task) => {
-      result.set(task.id, task.id === selectedRelationId ? 'selected' : related.has(task.id) ? 'related' : 'dimmed')
-    })
-    return result
-  }, [allTasks, selectedRelationId])
+  const relations = useMemo(() => relationsFor(allTasks, selectedRelationId), [allTasks, selectedRelationId])
 
   // --- Carga inicial y sincronización -------------------------------------
 

@@ -8,6 +8,7 @@ import { columnStatusLabels, columnStatusProgress, resolveColumnStatus } from '.
 import { addDays, diffDays, formatDateKey, isWorkingDay, startOfWeek, todayKey, weekdayNumber } from '../domain/dates'
 import { activityNumbers } from '../domain/numbering'
 import { assigneeNames, buildBoardPeople, type BoardPerson } from '../domain/people'
+import { relationsFor } from '../domain/dependencies'
 import { computeSchedule } from '../domain/schedule'
 import { boardSchedule, describeWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
@@ -91,6 +92,17 @@ function BoardGantt() {
   const [exportError, setExportError] = useState('')
   const [ownerProfile, setOwnerProfile] = useState<Profile | null>(null)
   const [zoom, setZoom] = useState<Zoom>(() => readZoom(boardId, narrow))
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // Esc quita el resaltado de relaciones.
+  useEffect(() => {
+    if (!selectedId) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedId(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedId])
   const [scrollRef, availableWidth] = useElementWidth<HTMLDivElement>()
 
   useEffect(() => {
@@ -152,6 +164,8 @@ function BoardGantt() {
     [allTasks, numbers],
   )
   const undated = allTasks.length - rows.length
+  const relations = useMemo(() => relationsFor(rows.map(({ task }) => task), selectedId), [rows, selectedId])
+  const toggleSelected = (taskId: string) => setSelectedId((current) => (current === taskId ? null : taskId))
 
   const timeline = useMemo(() => {
     if (rows.length === 0) return null
@@ -264,6 +278,31 @@ function BoardGantt() {
             </div>
           </div>
 
+          {selectedId && relations.size > 0 && (() => {
+            const label = (id: string) => `#${numbers.get(id) ?? '?'}`
+            const byRelation = (relation: string) => [...relations].filter(([, value]) => value === relation).map(([id]) => label(id))
+            const predecessors = byRelation('predecessor')
+            const successors = byRelation('successor')
+            const selectedRow = rows.find(({ task }) => task.id === selectedId)
+            return (
+              <div className="gantt-selection" role="status">
+                <span className="min-w-0">
+                  <strong className="text-white">{label(selectedId)}</strong>
+                  <span className="text-[var(--text-muted)]"> {selectedRow?.task.title}</span>
+                </span>
+                <span className="gantt-selection-chip gantt-selection-predecessor">
+                  ◀ Depende de: {predecessors.length ? predecessors.join(', ') : 'ninguna'}
+                </span>
+                <span className="gantt-selection-chip gantt-selection-successor">
+                  ▶ Le siguen: {successors.length ? successors.join(', ') : 'ninguna'}
+                </span>
+                <button type="button" onClick={() => setSelectedId(null)} className="btn-ghost ml-auto px-3 py-1 text-xs">
+                  Quitar resaltado (Esc)
+                </button>
+              </div>
+            )
+          })()}
+
           <div ref={scrollRef} className="gantt-scroll">
             {!timeline ? (
               <div className="px-5 py-16 text-center text-sm text-slate-400">Añade fechas de inicio y fin a tus tareas para verlas aquí.</div>
@@ -330,12 +369,20 @@ function BoardGantt() {
                             : `M ${startX} ${startY} H ${startX + gap} V ${(startY + endY) / 2} H ${endX - gap} V ${endY} H ${endX}`
                           const critical = schedule.tasks.get(task.id)?.critical && schedule.tasks.get(predecessorId)?.critical
                           const overlap = schedule.tasks.get(task.id)?.startsBeforePredecessor
-                          const color = critical ? 'var(--critical)' : overlap ? 'var(--priority-medium)' : '#94a3b8'
+                          // Con una tarea seleccionada: flechas hacia ella en ámbar (predecesoras),
+                          // desde ella en celeste (sucesoras) y el resto casi transparente.
+                          const incoming = selectedId === task.id
+                          const outgoing = selectedId === predecessorId
+                          const highlighted = incoming || outgoing
+                          const faded = selectedId !== null && !highlighted
+                          const baseColor = critical ? 'var(--critical)' : overlap ? 'var(--priority-medium)' : '#94a3b8'
+                          const color = incoming ? 'var(--relation-predecessor)' : outgoing ? 'var(--relation-successor)' : baseColor
+                          const strokeWidth = highlighted ? 2.5 : critical ? 2 : 1.5
                           return (
-                            <g key={`${predecessorId}-${task.id}`}>
-                              <path d={path} fill="none" stroke="#111827" strokeWidth={4} opacity={0.9} />
-                              <path d={path} fill="none" stroke={color} strokeWidth={critical ? 2 : 1.5} strokeDasharray={critical ? undefined : '4 3'} />
-                              <path d={`M ${endX - 5} ${endY - 4} L ${endX} ${endY} L ${endX - 5} ${endY + 4}`} fill="none" stroke={color} strokeWidth={1.5} />
+                            <g key={`${predecessorId}-${task.id}`} opacity={faded ? 0.12 : 1}>
+                              <path d={path} fill="none" stroke="#111827" strokeWidth={strokeWidth + 2.5} opacity={0.9} />
+                              <path d={path} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={critical || highlighted ? undefined : '4 3'} />
+                              <path d={`M ${endX - 6} ${endY - 5} L ${endX} ${endY} L ${endX - 6} ${endY + 5}`} fill="none" stroke={color} strokeWidth={highlighted ? 2 : 1.5} />
                             </g>
                           )
                         }),
@@ -357,7 +404,6 @@ function BoardGantt() {
                     const assignees = (assignments[task.id] ?? [])
                       .map((userId) => people.find((person) => person.userId === userId))
                       .filter((person): person is BoardPerson => Boolean(person))
-                    // La etiqueta siempre lleva el número: dentro de la barra si cabe, si no, al lado.
                     // Dentro de la barra: «#n · %» si cabe; si no, solo «#n» (el avance ya lo indica
                     // el color). Solo en barras donde ni el número cabe, la etiqueta va al lado.
                     const textWidth = (text: string) => text.length * 6.4 + 12
@@ -367,14 +413,24 @@ function BoardGantt() {
                     const labelInside = insideLabel !== null
                     const barLabel = insideLabel ?? fullLabel
                     const labelOnLeft = !labelInside && left + width + 6 + textWidth(fullLabel) > timelineWidth
+                    const relation = relations.get(task.id)
                     const description = `#${number} ${task.title}. ${formatDateKey(task.start_date!)} a ${formatDateKey(task.end_date!)}. ${columnStatusLabels[status]}, ${progress}%${critical ? ', ruta crítica' : ''}`
                     return (
-                      <div key={task.id} className="gantt-row" style={{ gridTemplateColumns: `${labelWidth}px ${timelineWidth}px`, height: rowHeight }}>
+                      <div key={task.id} className={`gantt-row ${relation ? `gantt-row-${relation}` : ''}`} style={{ gridTemplateColumns: `${labelWidth}px ${timelineWidth}px`, height: rowHeight }}>
                         {/* Texto a la izquierda (título en 2 líneas + estado) y responsables en su propia columna. */}
                         <div className="gantt-label gantt-task-label gantt-sticky">
                           <div className="min-w-0 flex-1">
                             <p className="gantt-task-title" title={task.title}>
-                              <span className="gantt-task-number">#{number}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSelected(task.id)}
+                                aria-pressed={relation === 'selected'}
+                                aria-label={`Resaltar predecesoras y sucesoras de la tarea ${number}`}
+                                title="Resaltar predecesoras y sucesoras"
+                                className={`task-number gantt-number ${relation && relation !== 'dimmed' ? `task-number-${relation}` : ''}`}
+                              >
+                                {number}
+                              </button>
                               {task.title}
                             </p>
                             <p className="gantt-task-meta">
@@ -391,7 +447,8 @@ function BoardGantt() {
                         </div>
                         <div className="relative" style={{ backgroundImage: weekBackground(workingDays, dayWidth), backgroundSize: `${weekWidth}px 100%` }}>
                           <div
-                            className={`gantt-bar ${critical ? 'gantt-bar-critical' : progress === 100 ? 'gantt-bar-done' : ''}`}
+                            className={`gantt-bar ${critical ? 'gantt-bar-critical' : progress === 100 ? 'gantt-bar-done' : ''} ${relation && relation !== 'dimmed' ? `gantt-bar-${relation}` : ''}`}
+                            onClick={() => toggleSelected(task.id)}
                             style={{ left, width, height: BAR_HEIGHT, top: (rowHeight - BAR_HEIGHT) / 2 }}
                             title={`${description}${namesByTask[task.id]?.length ? `\nResponsables: ${namesByTask[task.id].join(', ')}` : ''}`}
                             role="img"
