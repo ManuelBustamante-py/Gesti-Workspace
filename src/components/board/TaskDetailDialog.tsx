@@ -333,19 +333,21 @@ function TaskDetailDialog({
       footer={
         mode === 'edit' ? (
           <>
-            <button type="button" onClick={() => setMode('view')} className="btn-ghost px-4 py-2 text-sm">
+            <button key="edit-cancel" type="button" onClick={(event) => { event.preventDefault(); setMode('view') }} className="btn-ghost px-4 py-2 text-sm">
               Cancelar
             </button>
-            <button type="submit" form={`task-form-${task.id}`} disabled={saving} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+            <button key="edit-save" type="submit" form={`task-form-${task.id}`} disabled={saving} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
               {saving ? 'Guardando...' : 'Guardar cambios'}
             </button>
           </>
         ) : canEdit ? (
           <>
-            <button type="button" onClick={onDelete} className="btn-danger mr-auto px-4 py-2 text-sm">
+            <button key="view-delete" type="button" onClick={onDelete} className="btn-danger mr-auto px-4 py-2 text-sm">
               Eliminar
             </button>
-            <button type="button" onClick={() => setMode('edit')} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+            {/* key distinta: si React reutilizara este botón como el «Guardar» (type=submit) del modo edición,
+                el mismo clic enviaría el formulario al cambiar de modo. */}
+            <button key="view-edit" type="button" onClick={(event) => { event.preventDefault(); setMode('edit') }} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
               Editar
             </button>
           </>
