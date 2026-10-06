@@ -171,7 +171,7 @@ function BoardGantt() {
   // Columna de tareas proporcional a la pantalla para que los títulos quepan en dos líneas.
   const labelWidth = narrow ? 156 : Math.round(Math.min(440, Math.max(300, availableWidth * 0.26)))
   // Dos líneas de título + línea de estado, sin recortes.
-  const rowHeight = narrow ? 78 : 74
+  const rowHeight = narrow ? 84 : 80
   const today = todayKey()
 
   if (loadingBoard || (board && loading && columns.length === 0)) {
@@ -289,7 +289,7 @@ function BoardGantt() {
                             style={{ width: dayWidth }}
                             title={formatDateKey(day, { weekday: 'long', day: 'numeric', month: 'long' })}
                           >
-                            {dayWidth >= 28 && <span className="block text-[9px] opacity-70">{WEEKDAY_INITIALS[weekdayNumber(day) - 1]}</span>}
+                            <span className="block text-[9px] opacity-70">{WEEKDAY_INITIALS[weekdayNumber(day) - 1]}</span>
                             <span className="block">{Number(day.slice(8, 10))}</span>
                           </div>
                         ))}
@@ -361,23 +361,24 @@ function BoardGantt() {
                     const description = `#${number} ${task.title}. ${formatDateKey(task.start_date!)} a ${formatDateKey(task.end_date!)}. ${columnStatusLabels[status]}, ${progress}%${critical ? ', ruta crítica' : ''}`
                     return (
                       <div key={task.id} className="gantt-row" style={{ gridTemplateColumns: `${labelWidth}px ${timelineWidth}px`, height: rowHeight }}>
-                        <div className="gantt-label gantt-sticky min-w-0 overflow-hidden px-3 py-2 sm:px-5">
-                          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white sm:text-sm" title={task.title}>
-                            <span className="mr-1.5 text-xs text-slate-500">#{number}</span>
-                            {task.title}
-                          </p>
-                          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-slate-500">
-                            <span className="min-w-0 truncate">
+                        {/* Texto a la izquierda (título en 2 líneas + estado) y responsables en su propia columna. */}
+                        <div className="gantt-label gantt-task-label gantt-sticky">
+                          <div className="min-w-0 flex-1">
+                            <p className="gantt-task-title" title={task.title}>
+                              <span className="gantt-task-number">#{number}</span>
+                              {task.title}
+                            </p>
+                            <p className="gantt-task-meta">
                               {columnStatusLabels[status]} · {info?.duration ?? '?'} d háb.
                               {critical && <span className="ml-1 text-[var(--critical)]">◆ crítica</span>}
                               {info?.startsBeforePredecessor && <span className="ml-1 text-[var(--priority-medium)]">⚠ solapada</span>}
-                            </span>
-                            {assignees.length > 0 && (
-                              <span className="ml-auto shrink-0">
-                                <AssigneeAvatars people={assignees} max={narrow ? 2 : 3} />
-                              </span>
-                            )}
+                            </p>
                           </div>
+                          {assignees.length > 0 && (
+                            <span className="shrink-0 self-center">
+                              <AssigneeAvatars people={assignees} max={narrow ? 1 : 3} />
+                            </span>
+                          )}
                         </div>
                         <div className="relative" style={{ backgroundImage: weekBackground(workingDays, dayWidth), backgroundSize: `${weekWidth}px 100%` }}>
                           <div
