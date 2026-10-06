@@ -15,6 +15,7 @@ import EditBoardModal from '../components/dashboard/EditBoardModal'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
 import type { ColumnStatus } from '../domain/columnStatus'
 import { createsDependencyCycle } from '../domain/dependencies'
+import { prependUniqueById } from '../domain/collections'
 import { activityNumbers } from '../domain/numbering'
 import { boardPermissions, resolveBoardRole, roleEmotes, roleLabels, type BoardRole } from '../domain/roles'
 import { computeSchedule } from '../domain/schedule'
@@ -324,7 +325,7 @@ function Dashboard() {
       setError('')
       setCreatingBoard(true)
       const board = await createBoard(newBoard.name.trim(), newBoard.description.trim(), newBoard.color, user.id)
-      setBoards((current) => [board, ...current])
+      setBoards((current) => prependUniqueById(current, board))
       setNewBoard({ name: '', description: '', color: '#6366f1' })
       openBoard(board.id)
     } catch (err) {
@@ -344,7 +345,7 @@ function Dashboard() {
       setImportingBoard(true)
       const { board: importedBoard, warnings } = await readBoardWorkbook(file)
       const board = await createBoardFromImport(importedBoard, user.id)
-      setBoards((current) => [board, ...current])
+      setBoards((current) => prependUniqueById(current, board))
       setImportWarnings(warnings)
       setNotice(`Tablero «${board.name}» importado.`)
       openBoard(board.id)
