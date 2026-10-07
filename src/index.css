@@ -1642,9 +1642,9 @@ a:focus-visible {
   font-weight: 600;
 }
 
-.task-card-overdue-focus { box-shadow: 0 0 0 2px var(--critical), 0 0 18px rgba(224, 96, 122, 0.25); }
+.task-card-focus-overdue { box-shadow: 0 0 0 2px var(--critical), 0 0 18px rgba(224, 96, 122, 0.25); }
 
-.overdue-banner {
+.highlight-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1666,7 +1666,7 @@ a:focus-visible {
 
 @media (max-width: 767px) {
   .status-date-action, .status-date-form button { min-height: 2.5rem; }
-  .overdue-banner > button { width: 100%; min-height: 2.5rem; }
+  .highlight-banner > button { width: 100%; min-height: 2.5rem; }
 }
 
 /* La zona donde se sueltan tarjetas llega hasta el fondo de la columna: el
@@ -1695,3 +1695,21 @@ a:focus-visible {
   border-color: rgba(166, 180, 184, 0.3);
   background: rgba(166, 180, 184, 0.06);
 }
+
+/* ---- Resaltados desde las estadísticas: vencen pronto y ruta crítica ---- */
+.task-card-focus-dueSoon { box-shadow: 0 0 0 2px var(--priority-medium), 0 0 18px rgba(214, 170, 98, 0.22); }
+.task-card-focus-critical { box-shadow: 0 0 0 2px var(--critical), 0 0 18px rgba(224, 96, 122, 0.25); }
+
+.due-soon-chip {
+  border-radius: 999px;
+  background: rgba(214, 170, 98, 0.16);
+  padding: 0.1rem 0.5rem;
+  color: #f0c98a;
+  font-weight: 600;
+}
+
+.highlight-banner-dueSoon { border-color: rgba(214, 170, 98, 0.4); background: rgba(214, 170, 98, 0.09); color: #f0d6a8; }
+.highlight-banner-critical { border-color: rgba(224, 96, 122, 0.4); background: rgba(224, 96, 122, 0.08); color: #f3c1cb; }
+
+.stat-tile-dueSoon.stat-tile-active { border-color: var(--priority-medium); background: rgba(214, 170, 98, 0.1); }
+.stat-tile-critical.stat-tile-active { border-color: var(--critical); background: rgba(224, 96, 122, 0.1); }

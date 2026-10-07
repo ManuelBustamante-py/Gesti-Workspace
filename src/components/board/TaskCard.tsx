@@ -4,6 +4,7 @@ import { formatDateKey } from '../../domain/dates'
 import type { BoardPerson } from '../../domain/people'
 import { descriptionField, descriptionSummary } from '../../domain/description'
 import type { ColumnStatus } from '../../domain/columnStatus'
+import type { BoardHighlight } from '../../domain/deadlines'
 import type { TaskRelation } from '../../domain/dependencies'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { Task } from '../../services/tasks'
@@ -33,10 +34,10 @@ interface TaskCardProps {
   /** Estado y nombre de la columna (para las fechas de seguimiento del flujo). */
   columnStatus: ColumnStatus
   columnName: string
-  /** Días de atraso respecto de su fecha de fin (null si no está atrasada). */
-  overdueDays: number | null
-  /** Resaltado de «Atrasadas»: la tarjeta se destaca o se atenúa. */
-  emphasis: 'overdue' | 'dimmed' | null
+  /** Situación de plazo: días de atraso o días para vencer (ver domain/deadlines). */
+  deadline: { overdueDays: number | null; dueInDays: number | null }
+  /** Resaltado desde las estadísticas: la tarjeta se destaca o se atenúa. */
+  emphasis: BoardHighlight | 'dimmed' | null
   onSaveStatusDate: StatusDateSave
 }
 
@@ -60,7 +61,7 @@ function TaskCard({
   dragHandle,
   columnStatus,
   columnName,
-  overdueDays,
+  deadline,
   emphasis,
   onSaveStatusDate,
 }: TaskCardProps) {
@@ -70,7 +71,7 @@ function TaskCard({
 
   return (
     <article
-      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' || emphasis === 'dimmed' ? 'opacity-40' : ''} ${emphasis === 'overdue' ? 'task-card-overdue-focus' : ''} ${columnStatus === 'done' && task.completed_at ? 'task-card-completed' : ''} ${
+      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' || emphasis === 'dimmed' ? 'opacity-40' : ''} ${emphasis && emphasis !== 'dimmed' ? `task-card-focus-${emphasis}` : ''} ${columnStatus === 'done' && task.completed_at ? 'task-card-completed' : ''} ${
         relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : relation === 'predecessor' ? 'task-card-predecessor' : relation === 'successor' ? 'task-card-successor' : ''
       }`}
     >
@@ -104,9 +105,14 @@ function TaskCard({
         {sprint && <span className="meta-chip">{sprint}</span>}
         {estimate && <span className="meta-chip">Peso {estimate.replace(/\s*\(.*\)/, '')}</span>}
         {scheduleInfo?.critical && <span className="critical-chip" title="Ruta crítica">◆ Crítica</span>}
-        {overdueDays !== null && (
+        {deadline.overdueDays !== null && (
           <span className="overdue-chip" title={`La fecha de fin era el ${task.end_date}`}>
-            ⚠ Atrasada {overdueDays} d
+            ⚠ Atrasada {deadline.overdueDays} d
+          </span>
+        )}
+        {deadline.dueInDays !== null && (
+          <span className="due-soon-chip" title={`Fecha de fin: ${task.end_date}`}>
+            ⏳ {deadline.dueInDays === 0 ? 'Vence hoy' : `Vence en ${deadline.dueInDays} d`}
           </span>
         )}
         {comments && comments.alerts > 0 && (

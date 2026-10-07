@@ -7,7 +7,8 @@ import {
   resolveColumnStatus,
   type ColumnStatus,
 } from '../../domain/columnStatus'
-import { addDays, todayKey } from '../../domain/dates'
+import { todayKey } from '../../domain/dates'
+import { deadlineStatus, DUE_SOON_DAYS, type BoardHighlight } from '../../domain/deadlines'
 import type { BoardPerson } from '../../domain/people'
 import { progressMilestone, roleEmotes } from '../../domain/roles'
 import type { ProjectSchedule } from '../../domain/schedule'
@@ -22,19 +23,18 @@ interface BoardStatsProps {
   people: BoardPerson[]
   currentUserId: string | undefined
   commentStats: Record<string, { total: number; alerts: number }>
-  /** Modo «Atrasadas» activo en el tablero. */
-  overdueActive: boolean
-  onToggleOverdue: () => void
+  /** Resaltado activo en el tablero (atrasadas, vencen pronto o ruta crítica). */
+  highlight: BoardHighlight | null
+  onToggleHighlight: (mode: BoardHighlight) => void
 }
 
 const statusIcons: Record<ColumnStatus, string> = { todo: '○', in_progress: '◐', done: '●' }
 const priorityOrder: TaskPriority[] = ['high', 'medium', 'low']
 const priorityText: Record<TaskPriority, string> = { high: 'Alta', medium: 'Media', low: 'Baja' }
 
-function BoardStats({ columns, tasksByColumn, schedule, assignments, people, currentUserId, commentStats, overdueActive, onToggleOverdue }: BoardStatsProps) {
+function BoardStats({ columns, tasksByColumn, schedule, assignments, people, currentUserId, commentStats, highlight, onToggleHighlight }: BoardStatsProps) {
   const stats = useMemo(() => {
     const today = todayKey()
-    const nextWeek = addDays(today, 7)
     const entries = columns.flatMap((column) =>
       (tasksByColumn[column.id] ?? []).map((task) => ({ task, status: resolveColumnStatus(column) })),
     )
@@ -49,8 +49,9 @@ function BoardStats({ columns, tasksByColumn, schedule, assignments, people, cur
       progressSum += columnStatusProgress[status]
       if (status === 'done') return
       pendingByPriority[task.priority] += 1
-      if (task.end_date && task.end_date < today) overdue += 1
-      else if (task.end_date && task.end_date <= nextWeek) dueSoon += 1
+      const deadline = deadlineStatus(task, status, today)
+      if (deadline.overdueDays !== null) overdue += 1
+      else if (deadline.dueInDays !== null) dueSoon += 1
     })
 
     const total = entries.length
@@ -146,28 +147,30 @@ function BoardStats({ columns, tasksByColumn, schedule, assignments, people, cur
           <span className="stat-value">{stats.total}</span>
           <span className="stat-label">Tareas</span>
         </div>
-        {/* Pulsable: resalta en el tablero las tareas atrasadas. */}
-        <button
-          type="button"
-          onClick={onToggleOverdue}
-          disabled={stats.overdue === 0 && !overdueActive}
-          aria-pressed={overdueActive}
-          className={`stat-tile stat-tile-button ${stats.overdue > 0 ? 'stat-tile-alert' : ''} ${overdueActive ? 'stat-tile-active' : ''}`}
-          title={stats.overdue > 0 ? 'Resaltar las tareas atrasadas en el tablero' : 'No hay tareas atrasadas'}
-        >
-          <span className="stat-value">{stats.overdue}</span>
-          <span className="stat-label">
-            {stats.overdue > 0 ? '⚠ ' : ''}Atrasadas{stats.overdue > 0 && (overdueActive ? ' · ocultar' : ' · ver')}
-          </span>
-        </button>
-        <div className="stat-tile">
-          <span className="stat-value">{stats.dueSoon}</span>
-          <span className="stat-label">Vencen en 7 días</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-value">{stats.critical}</span>
-          <span className="stat-label">◆ En ruta crítica</span>
-        </div>
+        {/* Pulsables: resaltan esas tareas en el tablero (una a la vez). */}
+        {([
+          ['overdue', stats.overdue, stats.overdue > 0 ? '⚠ Atrasadas' : 'Atrasadas', 'las tareas atrasadas', 'No hay tareas atrasadas'],
+          ['dueSoon', stats.dueSoon, `Vencen en ${DUE_SOON_DAYS} días`, `las tareas que vencen en los próximos ${DUE_SOON_DAYS} días`, `Ninguna tarea vence en los próximos ${DUE_SOON_DAYS} días`],
+          ['critical', stats.critical, '◆ En ruta crítica', 'las tareas de la ruta crítica', 'No hay tareas en la ruta crítica'],
+        ] as const).map(([mode, count, label, target, empty]) => {
+          const active = highlight === mode
+          return (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onToggleHighlight(mode)}
+              disabled={count === 0 && !active}
+              aria-pressed={active}
+              className={`stat-tile stat-tile-button stat-tile-${mode} ${count > 0 && mode === 'overdue' ? 'stat-tile-alert' : ''} ${active ? 'stat-tile-active' : ''}`}
+              title={count > 0 ? `Resaltar ${target} en el tablero` : empty}
+            >
+              <span className="stat-value">{count}</span>
+              <span className="stat-label">
+                {label}{count > 0 && (active ? ' · ocultar' : ' · ver')}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

@@ -19,6 +19,7 @@ import MessagesPanel from '../components/dashboard/MessagesPanel'
 import ToastStack from '../components/ui/ToastStack'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
 import type { ColumnStatus } from '../domain/columnStatus'
+import { DUE_SOON_DAYS, type BoardHighlight } from '../domain/deadlines'
 import { createsDependencyCycle, relationsFor } from '../domain/dependencies'
 import { prependUniqueById } from '../domain/collections'
 import { activityNumbers } from '../domain/numbering'
@@ -131,7 +132,7 @@ function Dashboard() {
   const [openTask, setOpenTask] = useState<OpenTask | null>(null)
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null)
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('all')
-  const [highlightOverdue, setHighlightOverdue] = useState(false)
+  const [highlight, setHighlight] = useState<BoardHighlight | null>(null)
 
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
@@ -316,7 +317,7 @@ function Dashboard() {
     setMessagesOpen(false)
     setSelectedRelationId(null)
     setAssigneeFilter('all')
-    setHighlightOverdue(false)
+    setHighlight(null)
     setBoardError('')
     window.history.replaceState(null, '', `${window.location.pathname}#board-${boardId}`)
   }
@@ -1057,7 +1058,7 @@ function Dashboard() {
               {selectedBoard.description && <p className="mt-3 text-sm text-slate-400">{selectedBoard.description}</p>}
 
               <div className="mt-5">
-                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} assignments={assignments} people={people} currentUserId={user?.id} commentStats={boardData.commentStats} overdueActive={highlightOverdue} onToggleOverdue={() => setHighlightOverdue((value) => !value)} />
+                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} assignments={assignments} people={people} currentUserId={user?.id} commentStats={boardData.commentStats} highlight={highlight} onToggleHighlight={(mode) => setHighlight((current) => (current === mode ? null : mode))} />
               </div>
 
               <div className="mt-5 rounded-xl border border-white/5">
@@ -1108,10 +1109,14 @@ function Dashboard() {
 
               <div className="mt-6">
                 <h3 className="sr-only">Columnas</h3>
-                {highlightOverdue && (
-                  <div className="overdue-banner" role="status">
-                    <span>⚠ Resaltando las tareas atrasadas: no están completadas y su fecha de fin ya pasó.</span>
-                    <button type="button" onClick={() => setHighlightOverdue(false)} className="btn-ghost px-3 py-1 text-xs">
+                {highlight && (
+                  <div className={`highlight-banner highlight-banner-${highlight}`} role="status">
+                    <span>
+                      {highlight === 'overdue' && '⚠ Resaltando las tareas atrasadas: no están completadas y su fecha de fin ya pasó.'}
+                      {highlight === 'dueSoon' && `⏳ Resaltando las tareas que vencen en los próximos ${DUE_SOON_DAYS} días (sin completar).`}
+                      {highlight === 'critical' && '◆ Resaltando la ruta crítica: cualquier retraso en estas tareas retrasa el fin del proyecto.'}
+                    </span>
+                    <button type="button" onClick={() => setHighlight(null)} className="btn-ghost px-3 py-1 text-xs">
                       Quitar resaltado
                     </button>
                   </div>
@@ -1188,7 +1193,7 @@ function Dashboard() {
                         onMoveTask={handleMoveTask}
                         onDeleteTask={handleDeleteTask}
                         onToggleRelation={handleToggleRelation}
-                        highlightOverdue={highlightOverdue}
+                        highlight={highlight}
                         onSaveStatusDate={handleSaveStatusDate}
                       />
                     ))}
