@@ -1666,3 +1666,8 @@ a:focus-visible {
   .completion-confirm, .completion-form button { min-height: 2.5rem; }
   .overdue-banner > button { width: 100%; min-height: 2.5rem; }
 }
+
+/* La zona donde se sueltan tarjetas llega hasta el fondo de la columna: el
+   espacio libre bajo la última tarjeta también es destino (= al final). */
+.column-panel { display: flex; flex-direction: column; }
+.task-drop-zone { flex: 1 1 auto; }

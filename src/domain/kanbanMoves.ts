@@ -11,8 +11,9 @@ export function findColumnId<T extends MovableTask>(state: TasksByColumn<T>, id:
 }
 
 /**
- * Durante el arrastre: si la tarjeta pasa sobre otra columna, se mueve allí
- * (delante de la tarjeta bajo el cursor, o al final si está sobre la columna).
+ * Durante el arrastre: si la tarjeta pasa sobre otra columna, se mueve allí:
+ * delante de la tarjeta bajo el cursor, o detrás si el cursor está en su mitad
+ * inferior (`placeAfter`); al final si está sobre el espacio libre de la columna.
  * Devuelve null si no hay que cambiar nada.
  */
 export function moveAcrossColumns<T extends MovableTask>(
@@ -20,6 +21,7 @@ export function moveAcrossColumns<T extends MovableTask>(
   activeId: string,
   overId: string,
   columnIds: string[],
+  placeAfter = false,
 ): TasksByColumn<T> | null {
   const from = findColumnId(state, activeId, columnIds)
   const to = findColumnId(state, overId, columnIds)
@@ -32,15 +34,20 @@ export function moveAcrossColumns<T extends MovableTask>(
 
   const target = [...(state[to] ?? [])]
   const overIndex = target.findIndex((task) => task.id === overId)
-  target.splice(overIndex >= 0 ? overIndex : target.length, 0, { ...moved, column_id: to })
+  const insertAt = overIndex >= 0 ? overIndex + (placeAfter ? 1 : 0) : target.length
+  target.splice(insertAt, 0, { ...moved, column_id: to })
 
   return { ...state, [from]: source, [to]: target }
 }
 
 /**
  * Al soltar: ordena la columna de destino y numera sus posiciones 0..n.
- * Si la tarjeta venía de otra columna ya quedó colocada durante el arrastre
- * (moveAcrossColumns) y no se vuelve a desplazar.
+ *
+ * - Sobre una tarjeta de la misma columna: ocupa su lugar (orden de lista).
+ * - Sobre el espacio libre de la columna: va al final.
+ * - Si acaba de llegar de otra columna y el destino no cambió desde entonces
+ *   (`overAtColumnChange`), ya quedó en su sitio durante el arrastre y no se mueve.
+ *
  * Devuelve el nuevo estado y el orden a guardar.
  */
 export function dropIntoPlace<T extends MovableTask>(
@@ -49,6 +56,7 @@ export function dropIntoPlace<T extends MovableTask>(
   overId: string,
   columnIds: string[],
   originalColumnId: string | null,
+  overAtColumnChange: string | null = null,
 ) {
   const columnId = findColumnId(state, activeId, columnIds)
   if (!columnId) return null
@@ -56,8 +64,10 @@ export function dropIntoPlace<T extends MovableTask>(
   const list = [...(state[columnId] ?? [])]
   const oldIndex = list.findIndex((task) => task.id === activeId)
   const overIndex = list.findIndex((task) => task.id === overId)
-  // Sobre la columna (no sobre una tarjeta): se queda donde la dejó el arrastre.
-  const newIndex = overIndex >= 0 && columnId === originalColumnId ? overIndex : oldIndex
+  const placedOnColumnChange = columnId !== originalColumnId && overId === overAtColumnChange
+  let newIndex = oldIndex
+  if (overId === columnId) newIndex = list.length - 1
+  else if (overIndex >= 0 && !placedOnColumnChange) newIndex = overIndex
   const [moved] = list.splice(oldIndex, 1)
   list.splice(newIndex, 0, moved)
 

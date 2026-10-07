@@ -56,12 +56,16 @@ export function useTaskDragAndDrop({ columnIds, tasksByColumn, setTasksByColumn,
   }, [tasksByColumn])
 
   // Movimiento que llegó mientras el anterior aún se estaba dibujando.
-  const pendingMoveRef = useRef<{ activeId: string; overId: string } | null>(null)
+  const pendingMoveRef = useRef<{ activeId: string; overId: string; placeAfter: boolean } | null>(null)
+  // Destino en el momento en que la tarjeta cambió de columna: si al soltar sigue
+  // siendo el mismo, la tarjeta ya está en su sitio y no se vuelve a mover.
+  const overAtColumnChangeRef = useRef<string | null>(null)
 
-  function applyMove(activeId: string, overId: string) {
-    const next = moveAcrossColumns(latestRef.current, activeId, overId, columnIds)
+  function applyMove(activeId: string, overId: string, placeAfter: boolean) {
+    const next = moveAcrossColumns(latestRef.current, activeId, overId, columnIds, placeAfter)
     if (!next) return
     movedToNewColumnRef.current = true
+    overAtColumnChangeRef.current = overId
     latestRef.current = next
     setTasksByColumn(next)
   }
@@ -74,7 +78,7 @@ export function useTaskDragAndDrop({ columnIds, tasksByColumn, setTasksByColumn,
       movedToNewColumnRef.current = false
       const pending = pendingMoveRef.current
       pendingMoveRef.current = null
-      if (pending && snapshotRef.current) applyMove(pending.activeId, pending.overId)
+      if (pending && snapshotRef.current) applyMove(pending.activeId, pending.overId, pending.placeAfter)
     })
     return () => cancelAnimationFrame(frame)
     // applyMove solo usa refs y props estables durante el arrastre.
@@ -97,7 +101,14 @@ export function useTaskDragAndDrop({ columnIds, tasksByColumn, setTasksByColumn,
       if (overId != null) {
         if (columnIds.includes(String(overId))) {
           const columnTaskIds = new Set((tasksByColumn[String(overId)] ?? []).map((task) => task.id))
-          if (columnTaskIds.size > 0) {
+          // Bajo la última tarjeta (espacio libre de la columna): el destino es la
+          // propia columna, es decir, el final. Si no, la tarjeta más cercana.
+          const cardBottoms = [...columnTaskIds]
+            .map((id) => args.droppableRects.get(id)?.bottom)
+            .filter((bottom): bottom is number => bottom !== undefined)
+          const belowLastCard = args.pointerCoordinates !== null && cardBottoms.length > 0 &&
+            args.pointerCoordinates.y > Math.max(...cardBottoms)
+          if (columnTaskIds.size > 0 && !belowLastCard) {
             overId =
               closestCenter({
                 ...args,
@@ -127,19 +138,24 @@ export function useTaskDragAndDrop({ columnIds, tasksByColumn, setTasksByColumn,
     snapshotRef.current = latestRef.current
     originColumnRef.current = findColumnId(latestRef.current, String(active.id), columnIds)
     lastOverIdRef.current = null
+    overAtColumnChangeRef.current = null
     setActiveId(String(active.id))
     onDraggingChange?.(true)
   }
 
   function onDragOver({ active, over }: DragOverEvent) {
     if (!over || over.id === active.id) return
+    // ¿El centro de la tarjeta arrastrada está bajo el centro de la tarjeta destino?
+    // Entonces va detrás de ella, no delante (patrón de dnd-kit para varias columnas).
+    const dragged = active.rect.current.translated
+    const placeAfter = dragged !== null && dragged.top + dragged.height / 2 > over.rect.top + over.rect.height / 2
     // Como máximo un cambio de columna por fotograma: el siguiente espera a que
     // el diseño se reacomode y se vuelva a medir (no se pierde: queda pendiente).
     if (movedToNewColumnRef.current) {
-      pendingMoveRef.current = { activeId: String(active.id), overId: String(over.id) }
+      pendingMoveRef.current = { activeId: String(active.id), overId: String(over.id), placeAfter }
       return
     }
-    applyMove(String(active.id), String(over.id))
+    applyMove(String(active.id), String(over.id), placeAfter)
   }
 
   async function onDragEnd({ active, over }: DragEndEvent) {
@@ -151,7 +167,14 @@ export function useTaskDragAndDrop({ columnIds, tasksByColumn, setTasksByColumn,
       return
     }
 
-    const result = dropIntoPlace(latestRef.current, String(active.id), String(over.id), columnIds, originColumnRef.current)
+    const result = dropIntoPlace(
+      latestRef.current,
+      String(active.id),
+      String(over.id),
+      columnIds,
+      originColumnRef.current,
+      overAtColumnChangeRef.current,
+    )
     snapshotRef.current = null
     if (!result) {
       onDraggingChange?.(false)
