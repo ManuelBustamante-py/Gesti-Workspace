@@ -3,12 +3,13 @@ import { memo, type ReactNode } from 'react'
 import { formatDateKey } from '../../domain/dates'
 import type { BoardPerson } from '../../domain/people'
 import { descriptionField, descriptionSummary } from '../../domain/description'
+import type { ColumnStatus } from '../../domain/columnStatus'
 import type { TaskRelation } from '../../domain/dependencies'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { Task } from '../../services/tasks'
 import { priorityLabels } from '../../domain/priority'
 import AssigneeAvatars from './AssigneeAvatars'
-import CompletionControl from './CompletionControl'
+import StatusDateControl, { type StatusDateSave } from './StatusDateControl'
 
 export type { TaskRelation } from '../../domain/dependencies'
 
@@ -29,13 +30,14 @@ interface TaskCardProps {
   onToggleRelation: (taskId: string) => void
   /** Asa de arrastre (solo para quien puede editar). */
   dragHandle?: ReactNode
-  /** La tarea está en una columna de estado «Completado». */
-  inDoneColumn: boolean
+  /** Estado y nombre de la columna (para las fechas de seguimiento del flujo). */
+  columnStatus: ColumnStatus
+  columnName: string
   /** Días de atraso respecto de su fecha de fin (null si no está atrasada). */
   overdueDays: number | null
   /** Resaltado de «Atrasadas»: la tarjeta se destaca o se atenúa. */
   emphasis: 'overdue' | 'dimmed' | null
-  onSetCompletion: (task: Task, completedOn: string | null) => Promise<boolean>
+  onSaveStatusDate: StatusDateSave
 }
 
 const shortDate = (value: string) => formatDateKey(value, { day: 'numeric', month: 'short' })
@@ -56,10 +58,11 @@ function TaskCard({
   onDelete,
   onToggleRelation,
   dragHandle,
-  inDoneColumn,
+  columnStatus,
+  columnName,
   overdueDays,
   emphasis,
-  onSetCompletion,
+  onSaveStatusDate,
 }: TaskCardProps) {
   const summary = task.description ? descriptionSummary(task.description) : ''
   const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
@@ -67,7 +70,7 @@ function TaskCard({
 
   return (
     <article
-      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' || emphasis === 'dimmed' ? 'opacity-40' : ''} ${emphasis === 'overdue' ? 'task-card-overdue-focus' : ''} ${inDoneColumn && task.completed_at ? 'task-card-completed' : ''} ${
+      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' || emphasis === 'dimmed' ? 'opacity-40' : ''} ${emphasis === 'overdue' ? 'task-card-overdue-focus' : ''} ${columnStatus === 'done' && task.completed_at ? 'task-card-completed' : ''} ${
         relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : relation === 'predecessor' ? 'task-card-predecessor' : relation === 'successor' ? 'task-card-successor' : ''
       }`}
     >
@@ -138,7 +141,14 @@ function TaskCard({
         </p>
       )}
 
-      {inDoneColumn && <CompletionControl task={task} canEdit={canEdit} onSetCompletion={onSetCompletion} />}
+      {/* «Completada el» en Completado; «En esta columna desde» en En progreso (y en
+          Pendiente solo si ya se registró: allí se edita desde el detalle). */}
+      {columnStatus === 'done' && (
+        <StatusDateControl task={task} variant="completed" columnName={columnName} canEdit={canEdit} onSave={onSaveStatusDate} />
+      )}
+      {(columnStatus === 'in_progress' || (columnStatus === 'todo' && task.column_entered_at)) && (
+        <StatusDateControl task={task} variant="entered" columnName={columnName} canEdit={canEdit} onSave={onSaveStatusDate} />
+      )}
 
       <div className="task-actions">
         <button type="button" onClick={() => onOpen(task, 'view')} className="btn-ghost px-2 py-1 text-xs">

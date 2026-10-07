@@ -15,6 +15,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 
 import SortableTaskCard from './SortableTaskCard'
+import type { StatusDateSave } from './StatusDateControl'
 import type { TaskRelation } from './TaskCard'
 
 export type TaskDraft = { title: string; priority: TaskPriority; startDate: string; endDate: string }
@@ -45,7 +46,7 @@ interface ColumnProps {
   onToggleRelation: (taskId: string) => void
   /** Modo «Atrasadas»: destaca las tareas atrasadas y atenúa el resto. */
   highlightOverdue: boolean
-  onSetCompletion: (task: Task, completedOn: string | null) => Promise<boolean>
+  onSaveStatusDate: StatusDateSave
 }
 
 function Column({
@@ -70,7 +71,7 @@ function Column({
   onDeleteTask,
   onToggleRelation,
   highlightOverdue,
-  onSetCompletion,
+  onSaveStatusDate,
 }: ColumnProps) {
   const status = resolveColumnStatus(column)
   const today = todayKey()
@@ -231,10 +232,11 @@ function Column({
               onMove={onMoveTask}
               onDelete={onDeleteTask}
               onToggleRelation={onToggleRelation}
-              inDoneColumn={status === 'done'}
+              columnStatus={status}
+              columnName={column.name}
               overdueDays={overdueDays(task)}
               emphasis={highlightOverdue ? (overdueDays(task) !== null ? 'overdue' : 'dimmed') : null}
-              onSetCompletion={onSetCompletion}
+              onSaveStatusDate={onSaveStatusDate}
             />
           ))
         )}

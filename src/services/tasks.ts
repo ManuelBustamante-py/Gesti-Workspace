@@ -16,6 +16,8 @@ export interface Task {
   number?: number | null
   /** Fecha real de finalización confirmada (solo en columnas «Completado»). */
   completed_at?: string | null
+  /** «En esta columna desde»: fecha real en que entró a su columna actual. */
+  column_entered_at?: string | null
   position: number
   created_at: string
   updated_at: string
@@ -212,23 +214,32 @@ export async function reorderColumnTasks(columnId: string, orderedTaskIds: strin
 }
 
 /**
- * Confirma la finalización de una tarea con la fecha en que se terminó, o la
- * quita (null). Solo tiene efecto en columnas de estado «Completado».
+ * Fechas reales de seguimiento del flujo:
+ * - `completed_at`: «Completada el» (solo en columnas «Completado»).
+ * - `column_entered_at`: «En esta columna desde» (el resto de columnas).
+ * El servidor las borra cuando la tarea cambia de columna.
  */
-export async function setTaskCompletion(id: string, completedOn: string | null) {
-  if (completedOn && !isValidDateKey(completedOn)) {
-    throw new Error(`La fecha ${completedOn} no es válida.`)
+export type TaskStatusDateField = 'completed_at' | 'column_entered_at'
+
+const STATUS_DATE_MIGRATIONS: Record<TaskStatusDateField, string> = {
+  completed_at: '20261007150000_task_completion_dates.sql',
+  column_entered_at: '20261007180000_task_column_entered_at.sql',
+}
+
+export async function setTaskStatusDate(id: string, field: TaskStatusDateField, value: string | null) {
+  if (value && !isValidDateKey(value)) {
+    throw new Error(`La fecha ${value} no es válida.`)
   }
 
   const { data, error } = await supabase
     .from('tasks')
-    .update({ completed_at: completedOn, updated_at: new Date().toISOString() })
+    .update({ [field]: value, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
 
   if (error) {
-    if (/completed_at/.test(error.message)) {
-      throw new Error('Para confirmar finalizaciones aplica la migración 20261007150000_task_completion_dates.sql en Supabase.')
+    if (error.message.includes(field)) {
+      throw new Error(`Para registrar esta fecha aplica la migración ${STATUS_DATE_MIGRATIONS[field]} en Supabase.`)
     }
     throw error
   }
@@ -237,6 +248,11 @@ export async function setTaskCompletion(id: string, completedOn: string | null) 
   }
 
   return data[0] as Task
+}
+
+/** Confirma la finalización de una tarea con la fecha en que se terminó, o la quita (null). */
+export function setTaskCompletion(id: string, completedOn: string | null) {
+  return setTaskStatusDate(id, 'completed_at', completedOn)
 }
 
 export async function deleteTask(id: string) {

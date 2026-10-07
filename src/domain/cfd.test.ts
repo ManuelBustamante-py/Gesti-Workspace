@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { applyCompletionDates, buildDailyFlow, computeForecast, ganttDeadline, type FlowPoint, type StatusEvent } from './cfd'
+import { applyCompletionDates, applyStatusDates, buildDailyFlow, computeForecast, ganttDeadline, type FlowPoint, type StatusEvent } from './cfd'
 import { addDays } from './dates'
 
 // Eventos a mediodía UTC: caen el mismo día en cualquier zona entre UTC-11 y UTC+11.
@@ -56,6 +56,45 @@ describe('applyCompletionDates', () => {
     expect(points[0].done).toBe(1)
     // La tarea b no cambia.
     expect(adjusted[2]).toEqual(events[2])
+  })
+})
+
+describe('applyStatusDates (caso reportado)', () => {
+  it('una tarea importada ya completada cuenta en la velocidad si se confirma su fecha', () => {
+    const events = [event('h1', 'done', '2026-10-06'), event('h3', 'todo', '2026-10-06')]
+    const points = buildDailyFlow(applyStatusDates(events, { h1: { status: 'done', date: '2026-10-01' } }), '2026-10-07')
+    expect(points[0].day).toBe('2026-10-01')
+    expect(points[0].completed).toBe(1)
+    const forecast = computeForecast(points, '2026-11-12')!
+    expect(forecast.risk).not.toBe('no_velocity')
+  })
+
+  it('«En esta columna desde» evita la falsa alerta de cuello de botella', () => {
+    // Dos tareas creadas el 1 de septiembre y pasadas hoy a «En progreso».
+    const events = [
+      event('a', 'todo', '2026-09-01'),
+      event('b', 'todo', '2026-09-01'),
+      event('c', 'todo', '2026-09-01'),
+      event('a', 'in_progress', '2026-10-07'),
+      event('b', 'in_progress', '2026-10-07'),
+    ]
+    const withoutDates = computeForecast(buildDailyFlow(events, '2026-10-07'), '2026-11-12')!
+    expect(withoutDates.wipBefore).toBe(0)
+    expect(withoutDates.wipNow).toBe(2)
+
+    // En realidad estaban en progreso desde el 21 de septiembre.
+    const dated = applyStatusDates(events, {
+      a: { status: 'in_progress', date: '2026-09-21' },
+      b: { status: 'in_progress', date: '2026-09-21' },
+    })
+    const forecast = computeForecast(buildDailyFlow(dated, '2026-10-07'), '2026-11-12')!
+    expect(forecast.wipBefore).toBe(2)
+    expect(forecast.bottleneck).toBe(false)
+  })
+
+  it('no aplica la fecha si la tarea ya no está en ese estado', () => {
+    const events = [event('a', 'todo', '2026-10-01'), event('a', 'in_progress', '2026-10-05')]
+    expect(applyStatusDates(events, { a: { status: 'done', date: '2026-10-02' } })).toEqual(events)
   })
 })
 

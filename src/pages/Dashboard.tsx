@@ -64,7 +64,7 @@ import {
 } from '../services/columns'
 import { getProfile, syncProfileFromAuthUser, type Profile } from '../services/profiles'
 import { getBoardTaskAssignees, setTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
-import { createTask, deleteTask, moveTask, setTaskCompletion, updateTask, type Task, type TaskInput } from '../services/tasks'
+import { createTask, deleteTask, moveTask, setTaskStatusDate, updateTask, type Task, type TaskInput, type TaskStatusDateField } from '../services/tasks'
 
 type View = 'boards' | 'create' | 'requests'
 type OpenTask = { id: string; mode: 'view' | 'edit' }
@@ -684,17 +684,17 @@ function Dashboard() {
     openBoard(toast.board_id, toast.task_id)
   }
 
-  async function handleSetCompletion(task: Task, completedOn: string | null) {
+  async function handleSaveStatusDate(task: Task, field: TaskStatusDateField, value: string | null) {
     try {
       setBoardError('')
-      const updated = await setTaskCompletion(task.id, completedOn)
+      const updated = await setTaskStatusDate(task.id, field, value)
       setTasksByColumn((current) => ({
         ...current,
         [updated.column_id]: (current[updated.column_id] ?? []).map((item) => (item.id === updated.id ? updated : item)),
       }))
       return true
     } catch (err) {
-      const message = errorMessage(err, 'No se pudo guardar la fecha de finalización.')
+      const message = errorMessage(err, 'No se pudo guardar la fecha.')
       setBoardError(message)
       window.alert(message)
       return false
@@ -1189,7 +1189,7 @@ function Dashboard() {
                         onDeleteTask={handleDeleteTask}
                         onToggleRelation={handleToggleRelation}
                         highlightOverdue={highlightOverdue}
-                        onSetCompletion={handleSetCompletion}
+                        onSaveStatusDate={handleSaveStatusDate}
                       />
                     ))}
                   </div>
@@ -1237,6 +1237,7 @@ function Dashboard() {
           boardId={selectedBoard?.id ?? ''}
           isBoardOwner={canManageBoard}
           commentsSupported={boardData.commentsSupported}
+          onSaveStatusDate={handleSaveStatusDate}
           onSaveAssignees={(userIds) => handleSaveAssignees(openTaskData, userIds)}
           onSave={(input) => handleSaveTask(openTaskData, input)}
           onDelete={() => void handleDeleteTask(openTaskData)}

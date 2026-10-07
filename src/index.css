@@ -1587,13 +1587,15 @@ a:focus-visible {
   .flow-legend { padding: 0.75rem 0.75rem 0.25rem; }
 }
 
-/* ---- Finalización confirmada y tareas atrasadas ---- */
+/* ---- Fechas de seguimiento del flujo y tareas atrasadas ----
+   Las reglas base usan el verde de «Completada el»; la variante «entered»
+   («En esta columna desde») las sobrescribe con un tono neutro. */
 .task-card-completed {
   border-left-color: var(--status-done);
   background: linear-gradient(rgba(46, 154, 102, 0.1), rgba(46, 154, 102, 0.1)), var(--bg-card);
 }
 
-.completion-confirmed {
+.status-date-shown {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -1606,9 +1608,9 @@ a:focus-visible {
   font-size: 0.75rem;
 }
 
-.completion-change { color: #b7e8cd; font-size: 0.7rem; text-decoration: underline; text-underline-offset: 2px; }
+.status-date-change { color: #b7e8cd; font-size: 0.7rem; text-decoration: underline; text-underline-offset: 2px; }
 
-.completion-confirm {
+.status-date-action {
   width: 100%;
   margin-top: 0.6rem;
   border: 1px dashed rgba(46, 154, 102, 0.5);
@@ -1619,10 +1621,10 @@ a:focus-visible {
   font-weight: 600;
 }
 
-.completion-confirm:hover,
-.completion-confirm:focus-visible { background: rgba(46, 154, 102, 0.12); }
+.status-date-action:hover,
+.status-date-action:focus-visible { background: rgba(46, 154, 102, 0.12); }
 
-.completion-form {
+.status-date-form {
   display: grid;
   gap: 0.5rem;
   margin-top: 0.6rem;
@@ -1663,7 +1665,7 @@ a:focus-visible {
 .stat-tile-active { border-color: var(--critical); background: rgba(224, 96, 122, 0.1); }
 
 @media (max-width: 767px) {
-  .completion-confirm, .completion-form button { min-height: 2.5rem; }
+  .status-date-action, .status-date-form button { min-height: 2.5rem; }
   .overdue-banner > button { width: 100%; min-height: 2.5rem; }
 }
 
@@ -1671,3 +1673,25 @@ a:focus-visible {
    espacio libre bajo la última tarjeta también es destino (= al final). */
 .column-panel { display: flex; flex-direction: column; }
 .task-drop-zone { flex: 1 1 auto; }
+
+.status-date-entered.status-date-shown {
+  border-color: rgba(166, 180, 184, 0.3);
+  background: rgba(166, 180, 184, 0.1);
+  color: var(--text-main);
+}
+
+.status-date-entered.status-date-shown .status-date-change { color: var(--accent-ui); }
+
+.status-date-entered.status-date-action {
+  border-color: rgba(166, 180, 184, 0.35);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.status-date-entered.status-date-action:hover,
+.status-date-entered.status-date-action:focus-visible { background: rgba(166, 180, 184, 0.08); color: var(--text-main); }
+
+.status-date-entered.status-date-form {
+  border-color: rgba(166, 180, 184, 0.3);
+  background: rgba(166, 180, 184, 0.06);
+}

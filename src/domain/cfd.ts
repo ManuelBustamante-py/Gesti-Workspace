@@ -82,32 +82,65 @@ export function buildDailyFlow(events: StatusEvent[], endDay: string): FlowPoint
   return points
 }
 
+/** Fecha real en que una tarea llegó a su estado actual (confirmada por el equipo). */
+export type StatusDate = { status: FlowStatus; date: string }
+
 /**
- * Aplica las fechas de finalización confirmadas: el paso a «Listo» de cada
- * tarea se traslada a esa fecha (a mediodía local). Si la fecha es anterior al
- * alta de la tarea (p. ej. trabajo terminado antes de importarla), sus eventos
- * previos se adelantan a ese mismo momento manteniendo su orden.
+ * Aplica las fechas reales de llegada al estado actual de cada tarea:
+ * «Completada el» (columnas «Completado») y «En esta columna desde» (el resto).
+ *
+ * - El último evento de la tarea (su estado actual) se traslada a esa fecha, a
+ *   mediodía local. Solo se aplica si ese evento es del estado indicado.
+ * - Los eventos anteriores posteriores a esa fecha se adelantan a ella,
+ *   manteniendo su orden (p. ej. trabajo terminado antes de importarlo).
+ * - Una tarea con finalización confirmada que se creó o importó ya completada
+ *   recibe un alta «Por hacer» justo antes: así su finalización cuenta en la
+ *   velocidad, porque sabemos cuándo se terminó.
  */
-export function applyCompletionDates(events: StatusEvent[], completions: Record<string, string>): StatusEvent[] {
-  if (Object.keys(completions).length === 0) return events
-  const lastDoneIndex = new Map<string, number>()
+export function applyStatusDates(events: StatusEvent[], statusDates: Record<string, StatusDate>): StatusEvent[] {
+  if (Object.keys(statusDates).length === 0) return events
+
+  const lastIndex = new Map<string, number>()
+  const firstIndex = new Map<string, number>()
   events.forEach((event, index) => {
-    if (!completions[event.task_id]) return
-    if (event.status === 'done') lastDoneIndex.set(event.task_id, index)
-    else lastDoneIndex.delete(event.task_id)
+    if (!statusDates[event.task_id]) return
+    lastIndex.set(event.task_id, index)
+    if (!firstIndex.has(event.task_id)) firstIndex.set(event.task_id, index)
   })
 
-  return events.map((event, index) => {
-    const completedOn = completions[event.task_id]
-    const doneIndex = lastDoneIndex.get(event.task_id)
-    if (!completedOn || doneIndex === undefined || index > doneIndex) return event
-    const [year, month, day] = completedOn.split('-').map(Number)
-    const completedAt = new Date(year, month - 1, day, 12).toISOString()
-    if (index === doneIndex) return { ...event, occurred_at: completedAt }
-    return new Date(event.occurred_at).getTime() > new Date(completedAt).getTime()
-      ? { ...event, occurred_at: completedAt }
-      : event
+  const result: StatusEvent[] = []
+  events.forEach((event, index) => {
+    const override = statusDates[event.task_id]
+    const last = lastIndex.get(event.task_id)
+    if (!override || last === undefined || events[last].status !== override.status) {
+      result.push(event)
+      return
+    }
+    const [year, month, day] = override.date.split('-').map(Number)
+    const at = new Date(year, month - 1, day, 12)
+    const atIso = at.toISOString()
+
+    if (index === firstIndex.get(event.task_id) && override.status === 'done' && event.status === 'done') {
+      // Nació completada: alta sintética un instante antes de la finalización.
+      result.push({ task_id: event.task_id, status: 'todo', occurred_at: new Date(at.getTime() - 1000).toISOString() })
+    }
+    if (index === last) {
+      result.push({ ...event, occurred_at: atIso })
+    } else if (index < last && new Date(event.occurred_at).getTime() > at.getTime()) {
+      result.push({ ...event, occurred_at: atIso })
+    } else {
+      result.push(event)
+    }
   })
+  return result
+}
+
+/** Compatibilidad: solo fechas de finalización. */
+export function applyCompletionDates(events: StatusEvent[], completions: Record<string, string>): StatusEvent[] {
+  return applyStatusDates(
+    events,
+    Object.fromEntries(Object.entries(completions).map(([taskId, date]) => [taskId, { status: 'done' as const, date }])),
+  )
 }
 
 export type FlowRisk =

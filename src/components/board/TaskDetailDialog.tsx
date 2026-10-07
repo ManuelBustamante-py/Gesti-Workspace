@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import Modal from '../ui/Modal'
 import AssigneeAvatars from './AssigneeAvatars'
 import AssigneePicker from './AssigneePicker'
+import StatusDateControl, { type StatusDateSave } from './StatusDateControl'
 import TaskComments from './TaskComments'
 import TaskDescription from './TaskDescription'
 import { columnStatusLabels, resolveColumnStatus } from '../../domain/columnStatus'
@@ -32,6 +33,7 @@ interface TaskDetailDialogProps {
   boardId: string
   isBoardOwner: boolean
   commentsSupported: boolean
+  onSaveStatusDate: StatusDateSave
   onSaveAssignees: (userIds: string[]) => Promise<boolean>
   onSave: (input: TaskInput & { predecessorIds: string[] }) => Promise<boolean>
   onDelete: () => void
@@ -55,6 +57,7 @@ function TaskDetailDialog({
   boardId,
   isBoardOwner,
   commentsSupported,
+  onSaveStatusDate,
   onSaveAssignees,
   onSave,
   onDelete,
@@ -155,6 +158,23 @@ function TaskDetailDialog({
           </ul>
         )}
       </section>
+
+      {column && (
+        <section aria-label="Seguimiento del flujo">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Seguimiento del flujo</h3>
+          <StatusDateControl
+            key={`${task.id}-${task.column_id}`}
+            task={task}
+            variant={status === 'done' ? 'completed' : 'entered'}
+            columnName={column.name}
+            canEdit={canEdit}
+            onSave={onSaveStatusDate}
+          />
+          {!canEdit && !(status === 'done' ? task.completed_at : task.column_entered_at) && status !== 'done' && (
+            <p className="text-sm text-[var(--text-muted)]">Sin fecha de ingreso registrada para «{column.name}».</p>
+          )}
+        </section>
+      )}
 
       <dl className="detail-grid">
         <div>
