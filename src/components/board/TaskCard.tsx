@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 
 import { formatDateKey } from '../../domain/dates'
 import type { BoardPerson } from '../../domain/people'
@@ -26,6 +26,8 @@ interface TaskCardProps {
   onMove: (task: Task, columnId: string) => void
   onDelete: (task: Task) => void
   onToggleRelation: (taskId: string) => void
+  /** Asa de arrastre (solo para quien puede editar). */
+  dragHandle?: ReactNode
 }
 
 const shortDate = (value: string) => formatDateKey(value, { day: 'numeric', month: 'short' })
@@ -45,6 +47,7 @@ function TaskCard({
   onMove,
   onDelete,
   onToggleRelation,
+  dragHandle,
 }: TaskCardProps) {
   const summary = task.description ? descriptionSummary(task.description) : ''
   const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
@@ -57,6 +60,7 @@ function TaskCard({
       }`}
     >
       <div className="flex items-start gap-2">
+        {dragHandle}
         <button
           type="button"
           onClick={() => onToggleRelation(task.id)}

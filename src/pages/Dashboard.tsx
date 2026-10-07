@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { closestCorners, DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
 
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
+import { useTaskDragAndDrop } from '../hooks/useTaskDragAndDrop'
 import { useMessageNotifications, type MessageToast } from '../hooks/useMessageNotifications'
 import Column, { type TaskDraft } from '../components/board/Column'
 import TaskDetailDialog from '../components/board/TaskDetailDialog'
@@ -194,6 +196,27 @@ function Dashboard() {
   }, [assigneeFilter, assignments, tasksByColumn, currentUserId])
 
   const relations = useMemo(() => relationsFor(allTasks, selectedRelationId), [allTasks, selectedRelationId])
+
+  // Arrastrar y soltar: solo quien edita y sin filtros (con tareas ocultas el orden sería ambiguo).
+  const dragEnabled = canEditContent && assigneeFilter === 'all'
+  const drag = useTaskDragAndDrop({
+    columnIds: columns.map((column) => column.id),
+    tasksByColumn,
+    setTasksByColumn,
+    onError: setBoardError,
+  })
+  const columnName = (id: string | number | undefined) =>
+    columns.find((column) => column.id === String(id))?.name ??
+    columns.find((column) => (tasksByColumn[column.id] ?? []).some((task) => task.id === String(id)))?.name ??
+    ''
+  const dragAnnouncements: Announcements = {
+    onDragStart: ({ active }) => `Tomaste la tarea ${numbers.get(String(active.id)) ?? ''}.`,
+    onDragOver: ({ active, over }) =>
+      over ? `Tarea ${numbers.get(String(active.id)) ?? ''} sobre la columna ${columnName(over.id)}.` : undefined,
+    onDragEnd: ({ active, over }) =>
+      over ? `Tarea ${numbers.get(String(active.id)) ?? ''} soltada en ${columnName(over.id)}.` : 'Movimiento cancelado.',
+    onDragCancel: () => 'Movimiento cancelado. La tarea volvió a su lugar.',
+  }
 
   // --- Carga inicial y sincronización -------------------------------------
 
@@ -1062,6 +1085,11 @@ function Dashboard() {
 
               <div className="mt-6">
                 <h3 className="sr-only">Columnas</h3>
+                {canEditContent && assigneeFilter !== 'all' && columns.length > 0 && (
+                  <p className="mb-3 text-xs text-[var(--text-muted)]">
+                    Arrastrar y soltar se desactiva mientras hay un filtro activo. Usa «Mover a…» o vuelve a «Todas».
+                  </p>
+                )}
                 {boardData.assigneesSupported && columns.length > 0 && (
                   <div className="filter-chips mb-4" role="group" aria-label="Filtrar tareas por responsable">
                     {([
@@ -1093,6 +1121,17 @@ function Dashboard() {
                     )}
                   </div>
                 ) : (
+                  <DndContext
+                    sensors={drag.sensors}
+                    collisionDetection={closestCorners}
+                    {...drag.handlers}
+                    accessibility={{
+                      announcements: dragAnnouncements,
+                      screenReaderInstructions: {
+                        draggable: 'Para mover una tarea, pulsa espacio o enter sobre el asa, usa las flechas para cambiar de posición o de columna y vuelve a pulsar espacio para soltarla. Escape cancela.',
+                      },
+                    }}
+                  >
                   <div className="kanban-columns">
                     {columns.map((column) => (
                       <Column
@@ -1107,6 +1146,7 @@ function Dashboard() {
                         peopleById={peopleById}
                         commentStats={boardData.commentStats}
                         canEdit={canEditContent}
+                        dragEnabled={dragEnabled}
                         creatingTask={creatingTaskColumnId === column.id}
                         movingTaskId={movingTaskId}
                         onRename={(name, status) => handleRenameColumn(column.id, name, status)}
@@ -1119,6 +1159,17 @@ function Dashboard() {
                       />
                     ))}
                   </div>
+                  <DragOverlay dropAnimation={{ duration: 180, easing: 'ease-out' }}>
+                    {drag.activeTask && (
+                      <div className={`task-card task-card-${drag.activeTask.priority} drag-overlay`}>
+                        <p className="flex items-start gap-2">
+                          <span className="task-number">{numbers.get(drag.activeTask.id)}</span>
+                          <span className="task-title">{drag.activeTask.title}</span>
+                        </p>
+                      </div>
+                    )}
+                  </DragOverlay>
+                  </DndContext>
                 )}
               </div>
             </section>

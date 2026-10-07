@@ -80,6 +80,20 @@ describe('column status', () => {
 })
 
 describe('numbering', () => {
+  it('respeta el número guardado aunque la tarea cambie de columna', () => {
+    const numbers = activityNumbers([{ id: 'done' }, { id: 'todo' }], {
+      done: [{ id: 'e', number: 5 }, { id: 'a', number: 1 }],
+      todo: [{ id: 'b', number: 2 }],
+    })
+    expect(Object.fromEntries(numbers)).toEqual({ e: 5, a: 1, b: 2 })
+  })
+
+  it('numera después del mayor las tareas sin número guardado', () => {
+    const numbers = activityNumbers([{ id: 'c' }], { c: [{ id: 'x', number: 7 }, { id: 'y' }, { id: 'z', number: null }] })
+    expect(Object.fromEntries(numbers)).toEqual({ x: 7, y: 8, z: 9 })
+  })
+
+
   it('numera por columna y luego por posición', () => {
     const numbers = activityNumbers([{ id: 'c1' }, { id: 'c2' }], {
       c2: [{ id: 'b' }],

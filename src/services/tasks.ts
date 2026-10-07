@@ -12,6 +12,8 @@ export interface Task {
   start_date: string | null
   end_date: string | null
   predecessor_ids: string[]
+  /** Número de actividad fijo (migración 20261007090000); null en bases sin migrar. */
+  number?: number | null
   position: number
   created_at: string
   updated_at: string
@@ -24,6 +26,8 @@ export type TaskInput = {
   startDate?: string | null
   endDate?: string | null
   predecessorIds?: string[]
+  /** Solo al crear: número de actividad explícito (importación). */
+  number?: number
 }
 
 export const NO_PERMISSION_MESSAGE =
@@ -94,10 +98,25 @@ export async function createTasks(columnId: string, inputs: TaskInput[]) {
   const rows = inputs.map(taskRow)
   const firstPosition = await nextTaskPosition(columnId)
 
-  const { data, error } = await supabase
-    .from('tasks')
-    .insert(rows.map((row, index) => ({ ...row, column_id: columnId, position: firstPosition + index })))
-    .select()
+  const insert = (withNumbers: boolean) =>
+    supabase
+      .from('tasks')
+      .insert(
+        rows.map((row, index) => ({
+          ...row,
+          column_id: columnId,
+          position: firstPosition + index,
+          ...(withNumbers && inputs[index].number ? { number: inputs[index].number } : {}),
+        })),
+      )
+      .select()
+
+  const withNumbers = inputs.some((input) => input.number)
+  let { data, error } = await insert(withNumbers)
+  // Compatibilidad: base de datos sin la columna «number» todavía.
+  if (error && withNumbers && /number/.test(error.message)) {
+    ;({ data, error } = await insert(false))
+  }
 
   if (error) {
     throw error
@@ -165,6 +184,29 @@ export async function moveTask(
   }
 
   return data[0] as Task
+}
+
+/**
+ * Deja las tareas de una columna en el orden indicado (arrastrar y soltar). Las
+ * tareas que venían de otra columna pasan a esta.
+ */
+export async function reorderColumnTasks(columnId: string, orderedTaskIds: string[]) {
+  const { error } = await supabase.rpc('reorder_column_tasks', {
+    target_column_id: columnId,
+    ordered_task_ids: orderedTaskIds,
+  })
+
+  if (!error) return
+
+  // Sin la migración 20261007090000: se actualiza tarea por tarea.
+  if (error.code === 'PGRST202') {
+    for (const [index, taskId] of orderedTaskIds.entries()) {
+      await moveTask(taskId, columnId, index)
+    }
+    return
+  }
+
+  throw error
 }
 
 export async function deleteTask(id: string) {

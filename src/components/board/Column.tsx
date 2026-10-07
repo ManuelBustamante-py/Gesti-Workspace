@@ -10,7 +10,11 @@ import type { BoardPerson } from '../../domain/people'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { BoardColumn } from '../../services/columns'
 import type { Task, TaskPriority } from '../../services/tasks'
-import TaskCard, { type TaskRelation } from './TaskCard'
+import { useDroppable } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+
+import SortableTaskCard from './SortableTaskCard'
+import type { TaskRelation } from './TaskCard'
 
 export type TaskDraft = { title: string; priority: TaskPriority; startDate: string; endDate: string }
 
@@ -27,6 +31,8 @@ interface ColumnProps {
   peopleById: Map<string, BoardPerson>
   commentStats: Record<string, { total: number; alerts: number }>
   canEdit: boolean
+  /** Arrastrar y soltar activo (editores y sin filtros). */
+  dragEnabled: boolean
   creatingTask: boolean
   movingTaskId: string | null
   onRename: (name: string, status: ColumnStatus) => Promise<boolean>
@@ -49,6 +55,7 @@ function Column({
   peopleById,
   commentStats,
   canEdit,
+  dragEnabled,
   creatingTask,
   movingTaskId,
   onRename,
@@ -60,6 +67,8 @@ function Column({
   onToggleRelation,
 }: ColumnProps) {
   const status = resolveColumnStatus(column)
+  // Toda la lista es zona de destino, también cuando la columna está vacía.
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: column.id, disabled: !dragEnabled })
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(column.name)
   const [nextStatus, setNextStatus] = useState<ColumnStatus>(status)
@@ -185,13 +194,15 @@ function Column({
         </form>
       )}
 
-      <div className="mt-4 space-y-2">
+      <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+      <div ref={setDropRef} className={`task-drop-zone mt-4 space-y-2 ${isOver ? 'task-drop-zone-over' : ''}`}>
         {tasks.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">No hay tareas aún.</p>
+          <p className="text-sm text-[var(--text-muted)]">{dragEnabled ? 'Sin tareas. Puedes soltar una aquí.' : 'No hay tareas aún.'}</p>
         ) : (
           tasks.map((task) => (
-            <TaskCard
+            <SortableTaskCard
               key={task.id}
+              dragEnabled={dragEnabled}
               task={task}
               number={numbers.get(task.id)}
               predecessorNumbers={(task.predecessor_ids ?? [])
@@ -214,6 +225,7 @@ function Column({
           ))
         )}
       </div>
+      </SortableContext>
     </section>
   )
 }

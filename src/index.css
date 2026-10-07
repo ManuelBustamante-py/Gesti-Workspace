@@ -1439,3 +1439,56 @@ a:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .gantt-bar, .gantt-task-label > *, .gantt-bar-outside-label { transition: none; }
 }
+
+/* ---- Arrastrar y soltar ---- */
+.drag-handle {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.4rem;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  /* Evita que el navegador desplace la página al arrastrar desde el asa. */
+  touch-action: none;
+}
+
+.drag-handle:hover,
+.drag-handle:focus-visible { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.drag-handle:active { cursor: grabbing; }
+
+/* Hueco que deja la tarjeta mientras se arrastra. */
+.task-drag-placeholder > .task-card {
+  border-style: dashed;
+  opacity: 0.35;
+}
+
+.drag-overlay {
+  cursor: grabbing;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--accent-mint);
+  transform: rotate(1.5deg);
+}
+
+.task-drop-zone {
+  min-height: 3.5rem;
+  border-radius: 0.75rem;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.task-drop-zone-over {
+  background: rgba(166, 180, 184, 0.06);
+  box-shadow: inset 0 0 0 2px rgba(166, 180, 184, 0.25);
+}
+
+@media (max-width: 767px) {
+  .drag-handle { width: 2.5rem; height: 2.5rem; margin: -0.4rem 0 -0.4rem -0.4rem; font-size: 1.2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drag-overlay { transform: none; }
+  .task-drop-zone { transition: none; }
+}

@@ -30,6 +30,7 @@ export async function createBoardFromImport(importedBoard: ImportedBoard, ownerI
           priority: task.priority,
           startDate: task.startDate,
           endDate: task.endDate,
+          number: task.activityNumber,
         })),
       )
       importedColumn.tasks.forEach((task, index) => tasksByNumber.set(task.activityNumber, created[index]))
