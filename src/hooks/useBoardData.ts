@@ -8,11 +8,12 @@ import {
   type BoardMember,
 } from '../services/boardMembers'
 import { getBoardSnapshot, type BoardColumn } from '../services/columns'
+import { usePageVisible } from './usePageVisible'
 import { getBoardTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
 import { getBoardCommentStats, type CommentStats } from '../services/taskComments'
 import type { Task } from '../services/tasks'
 
-type TaskChange = { id?: string; column_id?: string }
+type TaskChange = { id?: string }
 type AssigneeChange = { task_id?: string }
 
 /**
@@ -32,16 +33,17 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const columnIdsRef = useRef(new Set<string>())
+  const visible = usePageVisible()
+  // Tablero ya cargado: al volver a la pestaña se recarga sin mostrar «Cargando».
+  const loadedBoardRef = useRef<string | null>(null)
   // Mientras se arrastra una tarjeta, las recargas por Realtime esperan: si el
   // tablero cambiara bajo el cursor, el arrastre se desordenaría.
   const pausedRef = useRef(false)
   const pendingContentRef = useRef<(() => void) | null>(null)
   const taskIdsRef = useRef(new Set<string>())
   useEffect(() => {
-    columnIdsRef.current = new Set(columns.map((column) => column.id))
     taskIdsRef.current = new Set(Object.values(tasksByColumn).flat().map((task) => task.id))
-  }, [columns, tasksByColumn])
+  }, [tasksByColumn])
 
   const loadContent = useCallback(async (targetBoardId: string) => {
     const [snapshot, assignees, comments] = await Promise.all([
@@ -84,13 +86,25 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
       setMembers([])
       setInvitations([])
       setAssignments({})
+      loadedBoardRef.current = null
       return
     }
+    // En una pestaña olvidada se cierra el canal; los datos siguen en pantalla y
+    // se recargan al volver, por si cambiaron mientras tanto.
+    if (!visible) return
 
     let cancelled = false
-    setLoading(true)
-    setError('')
+    if (loadedBoardRef.current !== boardId) {
+      setLoading(true)
+      setError('')
+    }
     Promise.all([loadContent(boardId), loadPeople(boardId)])
+      .then(() => {
+        if (!cancelled) {
+          loadedBoardRef.current = boardId
+          setError('')
+        }
+      })
       .catch((err) => {
         if (!cancelled) {
           console.error('Error al cargar el tablero:', err)
@@ -117,40 +131,29 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
       }, 150)
     }
 
+    const boardFilter = `board_id=eq.${boardId}`
+    const scheduleIfKnownTask = (taskId?: string) => {
+      if (taskId && taskIdsRef.current.has(taskId)) schedule('content')
+    }
+
+    // Altas y cambios se filtran en el servidor por board_id. Los DELETE no
+    // admiten filtro (solo traen la clave primaria): se comprueban aquí.
     const channel = supabase
       .channel(`board-live-${boardId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_columns', filter: `board_id=eq.${boardId}` }, () => schedule('content'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-        // tasks no tiene board_id: solo se recarga si el cambio toca este tablero.
-        const next = payload.new as TaskChange
-        const previous = payload.old as TaskChange
-        const touchesBoard =
-          (next?.column_id && columnIdsRef.current.has(next.column_id)) ||
-          (previous?.column_id && columnIdsRef.current.has(previous.column_id)) ||
-          (previous?.id && taskIdsRef.current.has(previous.id))
-        if (touchesBoard) schedule('content')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_columns', filter: boardFilter }, () => schedule('content'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: boardFilter }, () => schedule('content'))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, (payload) => {
+        scheduleIfKnownTask((payload.old as TaskChange).id)
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, (payload) => {
-        const next = payload.new as AssigneeChange
-        const previous = payload.old as AssigneeChange & { id?: string }
-        // Un DELETE solo trae la clave primaria: se recarga si la tarea es de este tablero o no se sabe.
-        if (!next?.task_id && !previous?.task_id) {
-          schedule('content')
-          return
-        }
-        if ([next?.task_id, previous?.task_id].some((taskId) => taskId && taskIdsRef.current.has(taskId))) {
-          schedule('content')
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments', filter: boardFilter }, () => schedule('content'))
+      // Un comentario borrado solo trae su id: no se sabe de qué tarea era.
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_comments' }, () => schedule('content'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_assignees', filter: boardFilter }, () => schedule('content'))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_assignees' }, (payload) => {
+        scheduleIfKnownTask((payload.old as AssigneeChange).task_id)
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_assignees' }, (payload) => {
-        const next = payload.new as AssigneeChange
-        const previous = payload.old as AssigneeChange
-        if ([next?.task_id, previous?.task_id].some((taskId) => taskId && taskIdsRef.current.has(taskId))) {
-          schedule('content')
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${boardId}` }, () => schedule('people'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_invitations', filter: `board_id=eq.${boardId}` }, () => schedule('people'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_members', filter: boardFilter }, () => schedule('people'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'board_invitations', filter: boardFilter }, () => schedule('people'))
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
           console.error('No se pudo conectar al canal Realtime del tablero.')
@@ -162,7 +165,7 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
       Object.values(timers).forEach((timer) => timer && clearTimeout(timer))
       void supabase.removeChannel(channel)
     }
-  }, [boardId, enabled, loadContent, loadPeople])
+  }, [boardId, enabled, visible, loadContent, loadPeople])
 
   return {
     columns,

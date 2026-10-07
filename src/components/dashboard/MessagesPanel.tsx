@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import Modal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
@@ -71,14 +71,25 @@ function MessagesPanel({
     }
   }, [board.id, onMarkedRead])
 
+  const messageIdsRef = useRef(new Set<string>())
+  useEffect(() => {
+    messageIdsRef.current = new Set(messages.map((message) => message.id))
+  }, [messages])
+
   useEffect(() => {
     void loadFirstPage()
     let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleReload = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => void loadFirstPage(), 400)
+    }
+    // Un DELETE no admite filtro y solo trae el id: se recarga si el mensaje está en la lista.
     const channel = supabase
       .channel(`messages-panel-${board.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, () => {
-        if (timer) clearTimeout(timer)
-        timer = setTimeout(() => void loadFirstPage(), 400)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments', filter: `board_id=eq.${board.id}` }, scheduleReload)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_comments' }, (payload) => {
+        const id = (payload.old as { id?: string }).id
+        if (id && messageIdsRef.current.has(id)) scheduleReload()
       })
       .subscribe()
     return () => {

@@ -140,7 +140,8 @@ function Dashboard() {
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
   const openBoardRef = useRef<(boardId: string, taskId?: string) => void>(() => undefined)
-  const messages = useMessageNotifications(user?.id, (toast) => openBoardRef.current(toast.board_id, toast.task_id))
+  const boardIds = useMemo(() => boards.map((board) => board.id), [boards])
+  const messages = useMessageNotifications(user?.id, boardIds, (toast) => openBoardRef.current(toast.board_id, toast.task_id))
   const { setCounts: setMessageCounts } = messages
   const selectedMessageInfo = selectedBoardId ? messages.counts[selectedBoardId] : undefined
   const totalUnreadMessages = Object.values(messages.counts).reduce(

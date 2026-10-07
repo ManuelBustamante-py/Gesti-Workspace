@@ -27,11 +27,21 @@ function showBrowserNotification(preview: MessagePreview, onClick: () => void) {
   }
 }
 
+// Realtime acepta como máximo 100 valores en un filtro «in».
+const MAX_FILTERED_BOARDS = 100
+
 /**
  * Contadores de mensajes no leídos por tablero y avisos de comentarios nuevos
  * de otras personas. Los tableros silenciados no generan avisos ni contador.
+ * Sigue activo con la pestaña oculta: de él salen los avisos del navegador.
  */
-export function useMessageNotifications(userId: string | undefined, onOpen: (toast: MessageToast) => void) {
+export function useMessageNotifications(
+  userId: string | undefined,
+  boardIds: string[],
+  onOpen: (toast: MessageToast) => void,
+) {
+  // Clave estable: renombrar un tablero no vuelve a suscribir el canal.
+  const boardKey = [...boardIds].sort().join(',')
   const [counts, setCounts] = useState<MessageCounts>({})
   const [supported, setSupported] = useState(true)
   const [toasts, setToasts] = useState<MessageToast[]>([])
@@ -58,7 +68,8 @@ export function useMessageNotifications(userId: string | undefined, onOpen: (toa
   }, [])
 
   useEffect(() => {
-    if (!userId) return
+    // Sin tableros (o mientras cargan) no hay mensajes que contar ni escuchar.
+    if (!userId || !boardKey) return
     void refresh()
 
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -67,9 +78,13 @@ export function useMessageNotifications(userId: string | undefined, onOpen: (toa
       timer = setTimeout(() => void refresh(), 400)
     }
 
+    // Solo comentarios de los tableros propios: Realtime no evalúa RLS del resto.
+    const ids = boardKey.split(',')
+    const insertFilter = ids.length <= MAX_FILTERED_BOARDS ? { filter: `board_id=in.(${boardKey})` } : {}
+
     const channel = supabase
       .channel(`messages-${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_comments' }, async (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_comments', ...insertFilter }, async (payload) => {
         const comment = payload.new as { id?: string; author_id?: string }
         if (!comment.id || comment.author_id === userId) return
         scheduleRefresh()
@@ -91,7 +106,7 @@ export function useMessageNotifications(userId: string | undefined, onOpen: (toa
       if (timer) clearTimeout(timer)
       void supabase.removeChannel(channel)
     }
-  }, [refresh, userId])
+  }, [boardKey, refresh, userId])
 
   async function requestBrowserPermission() {
     if (!browserNotificationsAvailable) return
