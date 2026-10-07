@@ -14,6 +14,7 @@ import TaskDetailDialog from '../components/board/TaskDetailDialog'
 import BoardScheduleForm from '../components/dashboard/BoardScheduleForm'
 import BoardStats from '../components/dashboard/BoardStats'
 import CollaboratorsModal from '../components/dashboard/CollaboratorsModal'
+import BoardSummaryMini from '../components/dashboard/BoardSummaryMini'
 import EditBoardModal from '../components/dashboard/EditBoardModal'
 import MessagesPanel from '../components/dashboard/MessagesPanel'
 import ToastStack from '../components/ui/ToastStack'
@@ -50,6 +51,8 @@ import {
 } from '../services/boardMembers'
 import { createBoardFromImport } from '../services/boardImport'
 import { setBoardNotificationsMuted } from '../services/boardMessages'
+import { getBoardSummaries } from '../services/boardSummaries'
+import type { BoardSummary } from '../domain/boardSummary'
 import {
   downloadBoardTemplate,
   exportBoardGanttWorkbook,
@@ -224,6 +227,25 @@ function Dashboard() {
 
   // --- Carga inicial y sincronización -------------------------------------
 
+  // Resumen ejecutivo de cada tablero para la lista «Mis tableros».
+  const [boardSummaries, setBoardSummaries] = useState<Record<string, BoardSummary>>({})
+  const [summariesSupported, setSummariesSupported] = useState(true)
+  const showingBoardList = activeView === 'boards' && !selectedBoardId
+  useEffect(() => {
+    if (!user || !showingBoardList) return
+    let cancelled = false
+    getBoardSummaries()
+      .then((result) => {
+        if (cancelled) return
+        setBoardSummaries(result.summaries)
+        setSummariesSupported(result.supported)
+      })
+      .catch((err) => console.error('Error al cargar los resúmenes de tableros:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [boards, showingBoardList, user])
+
   const refreshBoards = useCallback(async () => {
     try {
       setBoards(await getBoards())
@@ -309,7 +331,7 @@ function Dashboard() {
 
   // --- Navegación ------------------------------------------------------------
 
-  function openBoard(boardId: string, taskId?: string) {
+  function openBoard(boardId: string, taskId?: string, highlightMode?: BoardHighlight) {
     setActiveView('boards')
     setSelectedBoardId(boardId)
     setSettingsCollapsed(readSettingsCollapsed(boardId))
@@ -317,7 +339,7 @@ function Dashboard() {
     setMessagesOpen(false)
     setSelectedRelationId(null)
     setAssigneeFilter('all')
-    setHighlight(null)
+    setHighlight(highlightMode ?? null)
     setBoardError('')
     window.history.replaceState(null, '', `${window.location.pathname}#board-${boardId}`)
   }
@@ -1002,6 +1024,12 @@ function Dashboard() {
                             </span>
                           </div>
                           <p className="mt-2 line-clamp-3 min-h-10 text-sm text-slate-400">{board.description || 'Sin descripción.'}</p>
+                          {summariesSupported && (
+                            <BoardSummaryMini
+                              summary={boardSummaries[board.id]}
+                              onOpenHighlight={(mode) => openBoard(board.id, undefined, mode)}
+                            />
+                          )}
                           <div className="mt-auto flex flex-wrap gap-2 pt-5">
                             <button type="button" onClick={() => openBoard(board.id)} className="btn-mint-primary px-3 py-1.5 text-sm font-semibold">Abrir</button>
                             <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-3 py-1.5 text-sm">Gantt</Link>
