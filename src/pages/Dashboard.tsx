@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { closestCorners, DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
+import { DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
 
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -205,6 +205,7 @@ function Dashboard() {
     tasksByColumn,
     setTasksByColumn,
     onError: setBoardError,
+    onDraggingChange: boardData.setRealtimePaused,
   })
   const columnName = (id: string | number | undefined) =>
     columns.find((column) => column.id === String(id))?.name ??
@@ -1126,7 +1127,8 @@ function Dashboard() {
                 ) : (
                   <DndContext
                     sensors={drag.sensors}
-                    collisionDetection={closestCorners}
+                    collisionDetection={drag.collisionDetection}
+                    measuring={drag.measuring}
                     {...drag.handlers}
                     accessibility={{
                       announcements: dragAnnouncements,

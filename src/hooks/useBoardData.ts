@@ -33,6 +33,10 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
   const [error, setError] = useState('')
 
   const columnIdsRef = useRef(new Set<string>())
+  // Mientras se arrastra una tarjeta, las recargas por Realtime esperan: si el
+  // tablero cambiara bajo el cursor, el arrastre se desordenaría.
+  const pausedRef = useRef(false)
+  const pendingContentRef = useRef<(() => void) | null>(null)
   const taskIdsRef = useRef(new Set<string>())
   useEffect(() => {
     columnIdsRef.current = new Set(columns.map((column) => column.id))
@@ -101,8 +105,15 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
     const schedule = (kind: 'content' | 'people') => {
       if (timers[kind]) clearTimeout(timers[kind])
       timers[kind] = setTimeout(() => {
-        const task = kind === 'content' ? loadContent(boardId) : loadPeople(boardId)
-        task.catch((err) => console.error('Error al sincronizar el tablero en tiempo real:', err))
+        const run = () => {
+          const task = kind === 'content' ? loadContent(boardId) : loadPeople(boardId)
+          task.catch((err) => console.error('Error al sincronizar el tablero en tiempo real:', err))
+        }
+        if (kind === 'content' && pausedRef.current) {
+          pendingContentRef.current = run
+          return
+        }
+        run()
       }, 150)
     }
 
@@ -169,5 +180,14 @@ export function useBoardData(boardId: string | null, enabled: boolean) {
     error,
     reload,
     reloadPeople: () => (boardId ? loadPeople(boardId) : Promise.resolve()),
+    /** Pausa o reanuda las recargas de contenido por Realtime (arrastre en curso). */
+    setRealtimePaused: (paused: boolean) => {
+      pausedRef.current = paused
+      if (!paused && pendingContentRef.current) {
+        const pending = pendingContentRef.current
+        pendingContentRef.current = null
+        pending()
+      }
+    },
   }
 }
