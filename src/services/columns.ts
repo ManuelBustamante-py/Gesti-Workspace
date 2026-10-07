@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import type { ColumnStatus } from '../domain/columnStatus'
+import { inferColumnStatus, type ColumnStatus } from '../domain/columnStatus'
 import type { Task } from './tasks'
 import { NO_PERMISSION_MESSAGE } from './tasks'
 
@@ -100,7 +100,8 @@ export async function createDefaultColumns(boardId: string) {
 export async function createBoardColumn(
   boardId: string,
   name: string,
-  status: ColumnStatus = 'todo',
+  /** Por defecto se deduce del nombre («En progreso», «Haciendo», «Completado»...). */
+  status?: ColumnStatus,
 ) {
   const trimmedName = name.trim()
 
@@ -120,7 +121,7 @@ export async function createBoardColumn(
   }
 
   const position = lastColumns && lastColumns.length > 0 ? Number(lastColumns[0].position ?? 0) + 1 : 0
-  const [column] = await insertColumns([{ board_id: boardId, name: trimmedName, position, status }])
+  const [column] = await insertColumns([{ board_id: boardId, name: trimmedName, position, status: status ?? inferColumnStatus(trimmedName) }])
   return column
 }
 

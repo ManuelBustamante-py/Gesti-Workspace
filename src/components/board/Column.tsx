@@ -7,6 +7,7 @@ import {
   type ColumnStatus,
 } from '../../domain/columnStatus'
 import type { BoardPerson } from '../../domain/people'
+import { diffDays, todayKey } from '../../domain/dates'
 import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { BoardColumn } from '../../services/columns'
 import type { Task, TaskPriority } from '../../services/tasks'
@@ -42,6 +43,9 @@ interface ColumnProps {
   onMoveTask: (task: Task, columnId: string) => void
   onDeleteTask: (task: Task) => void
   onToggleRelation: (taskId: string) => void
+  /** Modo «Atrasadas»: destaca las tareas atrasadas y atenúa el resto. */
+  highlightOverdue: boolean
+  onSetCompletion: (task: Task, completedOn: string | null) => Promise<boolean>
 }
 
 function Column({
@@ -65,8 +69,14 @@ function Column({
   onMoveTask,
   onDeleteTask,
   onToggleRelation,
+  highlightOverdue,
+  onSetCompletion,
 }: ColumnProps) {
   const status = resolveColumnStatus(column)
+  const today = todayKey()
+  // Atrasada: no está completada y su fecha de fin ya pasó.
+  const overdueDays = (task: Task) =>
+    status !== 'done' && task.end_date && task.end_date < today ? diffDays(task.end_date, today) : null
   // Toda la lista es zona de destino, también cuando la columna está vacía.
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: column.id, disabled: !dragEnabled })
   const [editing, setEditing] = useState(false)
@@ -221,6 +231,10 @@ function Column({
               onMove={onMoveTask}
               onDelete={onDeleteTask}
               onToggleRelation={onToggleRelation}
+              inDoneColumn={status === 'done'}
+              overdueDays={overdueDays(task)}
+              emphasis={highlightOverdue ? (overdueDays(task) !== null ? 'overdue' : 'dimmed') : null}
+              onSetCompletion={onSetCompletion}
             />
           ))
         )}

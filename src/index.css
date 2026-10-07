@@ -1586,3 +1586,83 @@ a:focus-visible {
   .flow-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .flow-legend { padding: 0.75rem 0.75rem 0.25rem; }
 }
+
+/* ---- Finalización confirmada y tareas atrasadas ---- */
+.task-card-completed {
+  border-left-color: var(--status-done);
+  background: linear-gradient(rgba(46, 154, 102, 0.1), rgba(46, 154, 102, 0.1)), var(--bg-card);
+}
+
+.completion-confirmed {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+  border: 1px solid rgba(46, 154, 102, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(46, 154, 102, 0.14);
+  padding: 0.35rem 0.6rem;
+  color: #8fd9b3;
+  font-size: 0.75rem;
+}
+
+.completion-change { color: #b7e8cd; font-size: 0.7rem; text-decoration: underline; text-underline-offset: 2px; }
+
+.completion-confirm {
+  width: 100%;
+  margin-top: 0.6rem;
+  border: 1px dashed rgba(46, 154, 102, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  color: #8fd9b3;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.completion-confirm:hover,
+.completion-confirm:focus-visible { background: rgba(46, 154, 102, 0.12); }
+
+.completion-form {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  border: 1px solid rgba(46, 154, 102, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(46, 154, 102, 0.08);
+  padding: 0.6rem;
+}
+
+.overdue-chip {
+  border-radius: 999px;
+  background: rgba(224, 96, 122, 0.16);
+  padding: 0.1rem 0.5rem;
+  color: #f3a3b3;
+  font-weight: 600;
+}
+
+.task-card-overdue-focus { box-shadow: 0 0 0 2px var(--critical), 0 0 18px rgba(224, 96, 122, 0.25); }
+
+.overdue-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid rgba(224, 96, 122, 0.4);
+  border-radius: 0.75rem;
+  background: rgba(224, 96, 122, 0.09);
+  padding: 0.55rem 0.8rem;
+  color: #f3c1cb;
+  font-size: 0.8rem;
+}
+
+.stat-tile-button { text-align: left; transition: border-color 160ms ease, background-color 160ms ease; }
+.stat-tile-button:not(:disabled) { cursor: pointer; }
+.stat-tile-button:not(:disabled):hover { background: rgba(255, 255, 255, 0.05); }
+.stat-tile-active { border-color: var(--critical); background: rgba(224, 96, 122, 0.1); }
+
+@media (max-width: 767px) {
+  .completion-confirm, .completion-form button { min-height: 2.5rem; }
+  .overdue-banner > button { width: 100%; min-height: 2.5rem; }
+}

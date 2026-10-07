@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { buildDailyFlow, computeForecast, ganttDeadline, type FlowPoint, type StatusEvent } from './cfd'
+import { applyCompletionDates, buildDailyFlow, computeForecast, ganttDeadline, type FlowPoint, type StatusEvent } from './cfd'
 import { addDays } from './dates'
 
 // Eventos a mediodía UTC: caen el mismo día en cualquier zona entre UTC-11 y UTC+11.
@@ -19,16 +19,43 @@ describe('buildDailyFlow', () => {
       ],
       '2026-10-04',
     )
-    expect(points.map((point) => [point.day, point.todo, point.in_progress, point.done, point.total])).toEqual([
-      ['2026-10-01', 2, 0, 0, 2],
-      ['2026-10-02', 1, 1, 0, 2],
-      ['2026-10-03', 0, 0, 1, 1],
-      ['2026-10-04', 0, 0, 1, 1],
+    expect(points.map((point) => [point.day, point.todo, point.in_progress, point.done, point.total, point.completed])).toEqual([
+      ['2026-10-01', 2, 0, 0, 2, 0],
+      ['2026-10-02', 1, 1, 0, 2, 0],
+      ['2026-10-03', 0, 0, 1, 1, 1],
+      ['2026-10-04', 0, 0, 1, 1, 0],
     ])
+  })
+
+  it('no cuenta como completadas las tareas creadas ya listas y descuenta las reabiertas', () => {
+    const points = buildDailyFlow(
+      [
+        event('imported', 'done', '2026-10-01'),
+        event('a', 'todo', '2026-10-01'),
+        event('a', 'done', '2026-10-02'),
+        event('a', 'in_progress', '2026-10-03'),
+      ],
+      '2026-10-03',
+    )
+    expect(points.map((point) => point.completed)).toEqual([0, 1, -1])
+    expect(points[2].done).toBe(1)
   })
 
   it('sin eventos no hay serie', () => {
     expect(buildDailyFlow([], '2026-10-04')).toEqual([])
+  })
+})
+
+describe('applyCompletionDates', () => {
+  it('lleva el paso a «Listo» a la fecha confirmada, también antes del alta', () => {
+    const events = [event('a', 'todo', '2026-10-06'), event('a', 'done', '2026-10-06'), event('b', 'todo', '2026-10-06')]
+    const adjusted = applyCompletionDates(events, { a: '2026-09-30' })
+    const points = buildDailyFlow(adjusted, '2026-10-06')
+    expect(points[0].day).toBe('2026-09-30')
+    expect(points[0].completed).toBe(1)
+    expect(points[0].done).toBe(1)
+    // La tarea b no cambia.
+    expect(adjusted[2]).toEqual(events[2])
   })
 })
 
@@ -38,7 +65,8 @@ describe('computeForecast', () => {
   beforeAll(() => {
     points = Array.from({ length: 29 }, (_, index) => {
       const done = Math.floor(index / 2)
-      return { day: addDays('2026-09-08', index), todo: 20 - done - 2, in_progress: 2, done, total: 20 }
+      const previousDone = index === 0 ? 0 : Math.floor((index - 1) / 2)
+      return { day: addDays('2026-09-08', index), todo: 20 - done - 2, in_progress: 2, done, total: 20, completed: done - previousDone }
     })
   })
 
@@ -53,6 +81,16 @@ describe('computeForecast', () => {
     expect(forecast.requiredPerWeek).toBeCloseTo(10.5) // 6 tareas en 4 días
   })
 
+  it('con un solo día de historial usa la ventana mínima de 7 días', () => {
+    // Tablero importado hoy: 2 tareas completadas hoy, 5 pendientes.
+    const today: FlowPoint[] = [{ day: '2026-10-06', todo: 5, in_progress: 0, done: 4, total: 9, completed: 2 }]
+    const forecast = computeForecast(today, '2026-11-12')!
+    expect(forecast.risk).not.toBe('no_velocity')
+    expect(forecast.throughputPerWeek).toBeCloseTo(2)
+    expect(forecast.projectedFinish).toBe('2026-10-24') // 5 tareas a 2/7 por día → 18 días
+    expect(forecast.lowConfidence).toBe(true)
+  })
+
   it('va en plazo si la proyección cae antes de la fecha límite', () => {
     const forecast = computeForecast(points, '2026-10-31')!
     expect(forecast.risk).toBe('on_track')
@@ -60,7 +98,7 @@ describe('computeForecast', () => {
   })
 
   it('distingue sin velocidad, vencido y completo', () => {
-    const flat = points.map((point) => ({ ...point, done: 0, todo: 18 }))
+    const flat = points.map((point) => ({ ...point, done: 0, todo: 18, completed: 0 }))
     expect(computeForecast(flat, '2026-10-31')!.risk).toBe('no_velocity')
     expect(computeForecast(points, '2026-10-01')!.risk).toBe('overdue')
     const finished = points.map((point) => ({ ...point, todo: 0, in_progress: 0, done: 20 }))
@@ -68,7 +106,7 @@ describe('computeForecast', () => {
   })
 
   it('detecta un cuello de botella cuando el trabajo en curso se acumula', () => {
-    const growing = points.map((point, index) => ({ ...point, in_progress: index < 14 ? 2 : 2 + (index - 14), done: 1 }))
+    const growing = points.map((point, index) => ({ ...point, in_progress: index < 14 ? 2 : 2 + (index - 14), done: 1, completed: 0 }))
     const forecast = computeForecast(growing, '2026-10-31')!
     expect(forecast.wipNow).toBeGreaterThan(forecast.wipBefore)
     expect(forecast.bottleneck).toBe(true)

@@ -19,7 +19,7 @@ export const columnStatusProgress: Record<ColumnStatus, number> = {
 export function inferColumnStatus(name: string): ColumnStatus {
   const normalized = name.toLowerCase()
   if (/(complet|termin|hech|final|done|cerrad)/.test(normalized)) return 'done'
-  if (/(progreso|proceso|curso|doing|revisi|review)/.test(normalized)) return 'in_progress'
+  if (/(progreso|proceso|curso|doing|revisi|review|haciendo|wip|desarrollo|trabajando)/.test(normalized)) return 'in_progress'
   return 'todo'
 }
 

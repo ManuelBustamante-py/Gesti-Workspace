@@ -22,13 +22,16 @@ interface BoardStatsProps {
   people: BoardPerson[]
   currentUserId: string | undefined
   commentStats: Record<string, { total: number; alerts: number }>
+  /** Modo «Atrasadas» activo en el tablero. */
+  overdueActive: boolean
+  onToggleOverdue: () => void
 }
 
 const statusIcons: Record<ColumnStatus, string> = { todo: '○', in_progress: '◐', done: '●' }
 const priorityOrder: TaskPriority[] = ['high', 'medium', 'low']
 const priorityText: Record<TaskPriority, string> = { high: 'Alta', medium: 'Media', low: 'Baja' }
 
-function BoardStats({ columns, tasksByColumn, schedule, assignments, people, currentUserId, commentStats }: BoardStatsProps) {
+function BoardStats({ columns, tasksByColumn, schedule, assignments, people, currentUserId, commentStats, overdueActive, onToggleOverdue }: BoardStatsProps) {
   const stats = useMemo(() => {
     const today = todayKey()
     const nextWeek = addDays(today, 7)
@@ -143,10 +146,20 @@ function BoardStats({ columns, tasksByColumn, schedule, assignments, people, cur
           <span className="stat-value">{stats.total}</span>
           <span className="stat-label">Tareas</span>
         </div>
-        <div className={`stat-tile ${stats.overdue > 0 ? 'stat-tile-alert' : ''}`}>
+        {/* Pulsable: resalta en el tablero las tareas atrasadas. */}
+        <button
+          type="button"
+          onClick={onToggleOverdue}
+          disabled={stats.overdue === 0 && !overdueActive}
+          aria-pressed={overdueActive}
+          className={`stat-tile stat-tile-button ${stats.overdue > 0 ? 'stat-tile-alert' : ''} ${overdueActive ? 'stat-tile-active' : ''}`}
+          title={stats.overdue > 0 ? 'Resaltar las tareas atrasadas en el tablero' : 'No hay tareas atrasadas'}
+        >
           <span className="stat-value">{stats.overdue}</span>
-          <span className="stat-label">{stats.overdue > 0 ? '⚠ ' : ''}Atrasadas</span>
-        </div>
+          <span className="stat-label">
+            {stats.overdue > 0 ? '⚠ ' : ''}Atrasadas{stats.overdue > 0 && (overdueActive ? ' · ocultar' : ' · ver')}
+          </span>
+        </button>
         <div className="stat-tile">
           <span className="stat-value">{stats.dueSoon}</span>
           <span className="stat-label">Vencen en 7 días</span>

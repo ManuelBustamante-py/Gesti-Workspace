@@ -14,6 +14,8 @@ export interface Task {
   predecessor_ids: string[]
   /** Número de actividad fijo (migración 20261007090000); null en bases sin migrar. */
   number?: number | null
+  /** Fecha real de finalización confirmada (solo en columnas «Completado»). */
+  completed_at?: string | null
   position: number
   created_at: string
   updated_at: string
@@ -207,6 +209,34 @@ export async function reorderColumnTasks(columnId: string, orderedTaskIds: strin
   }
 
   throw error
+}
+
+/**
+ * Confirma la finalización de una tarea con la fecha en que se terminó, o la
+ * quita (null). Solo tiene efecto en columnas de estado «Completado».
+ */
+export async function setTaskCompletion(id: string, completedOn: string | null) {
+  if (completedOn && !isValidDateKey(completedOn)) {
+    throw new Error(`La fecha ${completedOn} no es válida.`)
+  }
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({ completed_at: completedOn, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+
+  if (error) {
+    if (/completed_at/.test(error.message)) {
+      throw new Error('Para confirmar finalizaciones aplica la migración 20261007150000_task_completion_dates.sql en Supabase.')
+    }
+    throw error
+  }
+  if (!data || data.length === 0) {
+    throw new Error(NO_PERMISSION_MESSAGE)
+  }
+
+  return data[0] as Task
 }
 
 export async function deleteTask(id: string) {

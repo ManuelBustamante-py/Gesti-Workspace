@@ -8,6 +8,7 @@ import type { TaskScheduleInfo } from '../../domain/schedule'
 import type { Task } from '../../services/tasks'
 import { priorityLabels } from '../../domain/priority'
 import AssigneeAvatars from './AssigneeAvatars'
+import CompletionControl from './CompletionControl'
 
 export type { TaskRelation } from '../../domain/dependencies'
 
@@ -28,6 +29,13 @@ interface TaskCardProps {
   onToggleRelation: (taskId: string) => void
   /** Asa de arrastre (solo para quien puede editar). */
   dragHandle?: ReactNode
+  /** La tarea está en una columna de estado «Completado». */
+  inDoneColumn: boolean
+  /** Días de atraso respecto de su fecha de fin (null si no está atrasada). */
+  overdueDays: number | null
+  /** Resaltado de «Atrasadas»: la tarjeta se destaca o se atenúa. */
+  emphasis: 'overdue' | 'dimmed' | null
+  onSetCompletion: (task: Task, completedOn: string | null) => Promise<boolean>
 }
 
 const shortDate = (value: string) => formatDateKey(value, { day: 'numeric', month: 'short' })
@@ -48,6 +56,10 @@ function TaskCard({
   onDelete,
   onToggleRelation,
   dragHandle,
+  inDoneColumn,
+  overdueDays,
+  emphasis,
+  onSetCompletion,
 }: TaskCardProps) {
   const summary = task.description ? descriptionSummary(task.description) : ''
   const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
@@ -55,7 +67,7 @@ function TaskCard({
 
   return (
     <article
-      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' ? 'opacity-40' : ''} ${
+      className={`task-card task-card-${task.priority} transition ${relation === 'dimmed' || emphasis === 'dimmed' ? 'opacity-40' : ''} ${emphasis === 'overdue' ? 'task-card-overdue-focus' : ''} ${inDoneColumn && task.completed_at ? 'task-card-completed' : ''} ${
         relation === 'selected' ? 'ring-2 ring-[var(--accent-mint)]' : relation === 'predecessor' ? 'task-card-predecessor' : relation === 'successor' ? 'task-card-successor' : ''
       }`}
     >
@@ -89,6 +101,11 @@ function TaskCard({
         {sprint && <span className="meta-chip">{sprint}</span>}
         {estimate && <span className="meta-chip">Peso {estimate.replace(/\s*\(.*\)/, '')}</span>}
         {scheduleInfo?.critical && <span className="critical-chip" title="Ruta crítica">◆ Crítica</span>}
+        {overdueDays !== null && (
+          <span className="overdue-chip" title={`La fecha de fin era el ${task.end_date}`}>
+            ⚠ Atrasada {overdueDays} d
+          </span>
+        )}
         {comments && comments.alerts > 0 && (
           <span className="alert-chip" title="Tiene problemas o parches temporales reportados en los comentarios">
             ⚠ {comments.alerts} {comments.alerts === 1 ? 'aviso' : 'avisos'}
@@ -120,6 +137,8 @@ function TaskCard({
           )}
         </p>
       )}
+
+      {inDoneColumn && <CompletionControl task={task} canEdit={canEdit} onSetCompletion={onSetCompletion} />}
 
       <div className="task-actions">
         <button type="button" onClick={() => onOpen(task, 'view')} className="btn-ghost px-2 py-1 text-xs">

@@ -23,10 +23,21 @@ export type FlowPoint = {
   in_progress: number
   done: number
   total: number
+  /**
+   * Tareas que pasaron a «Listo» ese día desde otro estado, menos las reabiertas.
+   * Una tarea creada o importada directamente como lista no cuenta: no es
+   * trabajo completado por el equipo en ese periodo.
+   */
+  completed: number
 }
 
 /** Días de historial usados para medir la velocidad (throughput). */
 export const THROUGHPUT_WINDOW_DAYS = 28
+/**
+ * Divisor mínimo de la velocidad. Con poco historial, dividir por 1 día
+ * exageraría el ritmo (2 tareas en un día ≠ 14 por semana).
+ */
+export const MIN_THROUGHPUT_DAYS = 7
 /** Días hacia atrás con los que se compara el trabajo en curso (WIP). */
 export const WIP_TREND_DAYS = 14
 
@@ -36,7 +47,11 @@ export const WIP_TREND_DAYS = 14
  */
 export function buildDailyFlow(events: StatusEvent[], endDay: string): FlowPoint[] {
   if (events.length === 0) return []
-  const sorted = [...events].sort((left, right) => left.occurred_at.localeCompare(right.occurred_at))
+  // Orden estable: a igual hora se respeta el orden original de los eventos.
+  const sorted = events
+    .map((event, order) => ({ event, order, time: new Date(event.occurred_at).getTime() }))
+    .sort((left, right) => left.time - right.time || left.order - right.order)
+    .map(({ event }) => event)
   const dayOf = (event: StatusEvent) => localDateToKey(new Date(event.occurred_at))
   const firstDay = dayOf(sorted[0])
   if (firstDay > endDay) return []
@@ -45,19 +60,54 @@ export function buildDailyFlow(events: StatusEvent[], endDay: string): FlowPoint
   const points: FlowPoint[] = []
   let index = 0
   for (let day = firstDay; day <= endDay; day = addDays(day, 1)) {
+    let completed = 0
     while (index < sorted.length && dayOf(sorted[index]) <= day) {
       const event = sorted[index]
-      if (event.status === 'removed') current.delete(event.task_id)
-      else current.set(event.task_id, event.status)
+      const previous = current.get(event.task_id)
+      if (event.status === 'removed') {
+        current.delete(event.task_id)
+      } else {
+        if (event.status === 'done' && previous && previous !== 'done') completed += 1
+        if (previous === 'done' && event.status !== 'done') completed -= 1
+        current.set(event.task_id, event.status)
+      }
       index += 1
     }
-    const point: FlowPoint = { day, todo: 0, in_progress: 0, done: 0, total: current.size }
+    const point: FlowPoint = { day, todo: 0, in_progress: 0, done: 0, total: current.size, completed }
     current.forEach((status) => {
       point[status] += 1
     })
     points.push(point)
   }
   return points
+}
+
+/**
+ * Aplica las fechas de finalización confirmadas: el paso a «Listo» de cada
+ * tarea se traslada a esa fecha (a mediodía local). Si la fecha es anterior al
+ * alta de la tarea (p. ej. trabajo terminado antes de importarla), sus eventos
+ * previos se adelantan a ese mismo momento manteniendo su orden.
+ */
+export function applyCompletionDates(events: StatusEvent[], completions: Record<string, string>): StatusEvent[] {
+  if (Object.keys(completions).length === 0) return events
+  const lastDoneIndex = new Map<string, number>()
+  events.forEach((event, index) => {
+    if (!completions[event.task_id]) return
+    if (event.status === 'done') lastDoneIndex.set(event.task_id, index)
+    else lastDoneIndex.delete(event.task_id)
+  })
+
+  return events.map((event, index) => {
+    const completedOn = completions[event.task_id]
+    const doneIndex = lastDoneIndex.get(event.task_id)
+    if (!completedOn || doneIndex === undefined || index > doneIndex) return event
+    const [year, month, day] = completedOn.split('-').map(Number)
+    const completedAt = new Date(year, month - 1, day, 12).toISOString()
+    if (index === doneIndex) return { ...event, occurred_at: completedAt }
+    return new Date(event.occurred_at).getTime() > new Date(completedAt).getTime()
+      ? { ...event, occurred_at: completedAt }
+      : event
+  })
 }
 
 export type FlowRisk =
@@ -96,10 +146,13 @@ export function computeForecast(points: FlowPoint[], deadline: string | null): F
   const current = points[lastIndex]
   const today = current.day
 
-  const windowStart = points[Math.max(0, lastIndex - THROUGHPUT_WINDOW_DAYS)]
-  const windowDays = lastIndex - Math.max(0, lastIndex - THROUGHPUT_WINDOW_DAYS)
-  const completedInWindow = Math.max(0, current.done - windowStart.done)
-  const perDay = windowDays > 0 ? completedInWindow / windowDays : 0
+  // Ventana: los últimos días con historial, incluido hoy.
+  const windowDays = Math.min(THROUGHPUT_WINDOW_DAYS, points.length)
+  const completedInWindow = Math.max(
+    0,
+    points.slice(-windowDays).reduce((total, point) => total + point.completed, 0),
+  )
+  const perDay = completedInWindow / Math.max(windowDays, MIN_THROUGHPUT_DAYS)
   const remaining = current.total - current.done
 
   let projectedFinish: string | null = null

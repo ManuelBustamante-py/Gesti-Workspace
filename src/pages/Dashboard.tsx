@@ -64,7 +64,7 @@ import {
 } from '../services/columns'
 import { getProfile, syncProfileFromAuthUser, type Profile } from '../services/profiles'
 import { getBoardTaskAssignees, setTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
-import { createTask, deleteTask, moveTask, updateTask, type Task, type TaskInput } from '../services/tasks'
+import { createTask, deleteTask, moveTask, setTaskCompletion, updateTask, type Task, type TaskInput } from '../services/tasks'
 
 type View = 'boards' | 'create' | 'requests'
 type OpenTask = { id: string; mode: 'view' | 'edit' }
@@ -131,6 +131,7 @@ function Dashboard() {
   const [openTask, setOpenTask] = useState<OpenTask | null>(null)
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null)
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('all')
+  const [highlightOverdue, setHighlightOverdue] = useState(false)
 
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
@@ -315,6 +316,7 @@ function Dashboard() {
     setMessagesOpen(false)
     setSelectedRelationId(null)
     setAssigneeFilter('all')
+    setHighlightOverdue(false)
     setBoardError('')
     window.history.replaceState(null, '', `${window.location.pathname}#board-${boardId}`)
   }
@@ -682,6 +684,23 @@ function Dashboard() {
     openBoard(toast.board_id, toast.task_id)
   }
 
+  async function handleSetCompletion(task: Task, completedOn: string | null) {
+    try {
+      setBoardError('')
+      const updated = await setTaskCompletion(task.id, completedOn)
+      setTasksByColumn((current) => ({
+        ...current,
+        [updated.column_id]: (current[updated.column_id] ?? []).map((item) => (item.id === updated.id ? updated : item)),
+      }))
+      return true
+    } catch (err) {
+      const message = errorMessage(err, 'No se pudo guardar la fecha de finalización.')
+      setBoardError(message)
+      window.alert(message)
+      return false
+    }
+  }
+
   async function handleSaveAssignees(task: Task, userIds: string[]) {
     const previous = assignments[task.id] ?? []
     try {
@@ -1038,7 +1057,7 @@ function Dashboard() {
               {selectedBoard.description && <p className="mt-3 text-sm text-slate-400">{selectedBoard.description}</p>}
 
               <div className="mt-5">
-                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} assignments={assignments} people={people} currentUserId={user?.id} commentStats={boardData.commentStats} />
+                <BoardStats columns={columns} tasksByColumn={tasksByColumn} schedule={schedule} assignments={assignments} people={people} currentUserId={user?.id} commentStats={boardData.commentStats} overdueActive={highlightOverdue} onToggleOverdue={() => setHighlightOverdue((value) => !value)} />
               </div>
 
               <div className="mt-5 rounded-xl border border-white/5">
@@ -1089,6 +1108,14 @@ function Dashboard() {
 
               <div className="mt-6">
                 <h3 className="sr-only">Columnas</h3>
+                {highlightOverdue && (
+                  <div className="overdue-banner" role="status">
+                    <span>⚠ Resaltando las tareas atrasadas: no están completadas y su fecha de fin ya pasó.</span>
+                    <button type="button" onClick={() => setHighlightOverdue(false)} className="btn-ghost px-3 py-1 text-xs">
+                      Quitar resaltado
+                    </button>
+                  </div>
+                )}
                 {canEditContent && assigneeFilter !== 'all' && columns.length > 0 && (
                   <p className="mb-3 text-xs text-[var(--text-muted)]">
                     Arrastrar y soltar se desactiva mientras hay un filtro activo. Usa «Mover a…» o vuelve a «Todas».
@@ -1161,6 +1188,8 @@ function Dashboard() {
                         onMoveTask={handleMoveTask}
                         onDeleteTask={handleDeleteTask}
                         onToggleRelation={handleToggleRelation}
+                        highlightOverdue={highlightOverdue}
+                        onSetCompletion={handleSetCompletion}
                       />
                     ))}
                   </div>

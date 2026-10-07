@@ -7,6 +7,7 @@ import { useBoardData } from '../hooks/useBoardData'
 import { useElementWidth, useIsNarrow } from '../hooks/useLayout'
 import { supabase } from '../lib/supabase'
 import {
+  applyCompletionDates,
   buildDailyFlow,
   computeForecast,
   flowLabels,
@@ -16,6 +17,7 @@ import {
   type FlowForecast,
   type StatusEvent,
 } from '../domain/cfd'
+import { resolveColumnStatus } from '../domain/columnStatus'
 import { formatDateKey, todayKey, weekdayNumber } from '../domain/dates'
 import { getBoard, type Board } from '../services/boards'
 import { getBoardStatusEvents } from '../services/flowHistory'
@@ -130,10 +132,25 @@ function BoardFlow() {
     }
   }, [board, loadEvents])
 
-  const { tasksByColumn } = useBoardData(board?.id ?? null, Boolean(board))
+  const { columns, tasksByColumn } = useBoardData(board?.id ?? null, Boolean(board))
+  // Fechas de finalización confirmadas en las columnas «Completado».
+  const completions = useMemo(() => {
+    const result: Record<string, string> = {}
+    columns.forEach((column) => {
+      if (resolveColumnStatus(column) !== 'done') return
+      ;(tasksByColumn[column.id] ?? []).forEach((task) => {
+        if (task.completed_at) result[task.id] = task.completed_at
+      })
+    })
+    return result
+  }, [columns, tasksByColumn])
+  const confirmedCount = Object.keys(completions).length
   const deadline = useMemo(() => ganttDeadline(Object.values(tasksByColumn).flat()), [tasksByColumn])
   const today = todayKey()
-  const allPoints = useMemo(() => buildDailyFlow(events, today), [events, today])
+  const allPoints = useMemo(
+    () => buildDailyFlow(applyCompletionDates(events, completions), today),
+    [completions, events, today],
+  )
   const forecast = useMemo(() => computeForecast(allPoints, deadline), [allPoints, deadline])
   const points = useMemo(() => allPoints.slice(-MAX_HISTORY_DAYS), [allPoints])
   const weeklyRows = useMemo(
@@ -281,7 +298,7 @@ function BoardFlow() {
               </div>
 
               <p className="border-t border-white/10 px-4 py-3 text-xs text-slate-500 sm:px-5">
-                Velocidad = tareas que pasaron a «Listo» (neto) en los últimos {THROUGHPUT_WINDOW_DAYS} días. La proyección asume que ese ritmo se mantiene y que no se agregan tareas.
+                Velocidad = tareas que pasaron a «Listo» desde otro estado (menos las reabiertas) en los últimos {THROUGHPUT_WINDOW_DAYS} días; las creadas o importadas ya listas no cuentan. Con menos de una semana de historial se divide igualmente por 7 días para no exagerar el ritmo.{confirmedCount > 0 && ` Se usan las fechas de finalización confirmadas de ${confirmedCount} tarea(s).`} La proyección asume que ese ritmo se mantiene y que no se agregan tareas.
                 El tiempo de ciclo se estima con la ley de Little (trabajo en progreso ÷ velocidad).
                 {forecast.lowConfidence && ' Hay menos de 2 semanas de historial: la proyección es poco fiable todavía.'}
                 {' '}El historial anterior a la activación de esta función se reconstruyó de forma aproximada con las fechas de creación y última actualización de cada tarea.
