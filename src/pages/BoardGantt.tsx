@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import AssigneeAvatars from '../components/board/AssigneeAvatars'
 import { useAuth } from '../context/AuthContext'
+import { useElementWidth, useIsNarrow } from '../hooks/useLayout'
 import { useBoardData } from '../hooks/useBoardData'
 import { columnStatusLabels, columnStatusProgress, resolveColumnStatus } from '../domain/columnStatus'
 import { addDays, diffDays, formatDateKey, isWorkingDay, startOfWeek, todayKey, weekdayNumber } from '../domain/dates'
@@ -27,32 +28,6 @@ const MIN_FIT_DAY_WIDTH = 8
 const MAX_FIT_DAY_WIDTH = 72
 const BAR_HEIGHT = 28
 const WEEKDAY_INITIALS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
-
-function useIsNarrow() {
-  const query = '(max-width: 767px)'
-  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const media = window.matchMedia(query)
-    const update = () => setNarrow(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-  return narrow
-}
-
-/** Ancho disponible del contenedor, actualizado al redimensionar la ventana. */
-function useElementWidth<T extends HTMLElement>() {
-  // Ref de callback: el contenedor aparece después de la carga inicial.
-  const [element, setElement] = useState<T | null>(null)
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    if (!element) return
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)))
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [element])
-  return [setElement, width] as const
-}
 
 function zoomStorageKey(boardId: string) {
   return `gesti:gantt-zoom:${boardId}`
@@ -240,17 +215,22 @@ function BoardGantt() {
               {rows.length} actividad{rows.length === 1 ? '' : 'es'} con fechas · {criticalCount} en ruta crítica · Jornada: {describeWorkingDays(currentSchedule.working_days)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              void exportBoardGanttWorkbook(board, columns, tasksByColumn, namesByTask).catch((err) =>
-                setExportError(err instanceof Error ? err.message : 'No se pudo exportar.'),
-              )
-            }
-            className="btn-ghost px-4 py-2 text-sm"
-          >
-            Exportar Gantt XLSX
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link to={`/dashboard/flujo/${board.id}`} className="btn-ghost px-4 py-2 text-sm">
+              📈 Flujo acumulado (CFD)
+            </Link>
+            <button
+              type="button"
+              onClick={() =>
+                void exportBoardGanttWorkbook(board, columns, tasksByColumn, namesByTask).catch((err) =>
+                  setExportError(err instanceof Error ? err.message : 'No se pudo exportar.'),
+                )
+              }
+              className="btn-ghost px-4 py-2 text-sm"
+            >
+              Exportar Gantt XLSX
+            </button>
+          </div>
         </header>
 
         {(error || exportError) && <p className="alert-error mb-4 rounded-lg p-3 text-sm" role="alert">{error || exportError}</p>}

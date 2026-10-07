@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { closestCorners, DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
 
@@ -983,6 +984,7 @@ function Dashboard() {
                           <div className="mt-auto flex flex-wrap gap-2 pt-5">
                             <button type="button" onClick={() => openBoard(board.id)} className="btn-mint-primary px-3 py-1.5 text-sm font-semibold">Abrir</button>
                             <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-3 py-1.5 text-sm">Gantt</Link>
+                            <Link to={`/dashboard/flujo/${board.id}`} className="btn-ghost px-3 py-1.5 text-sm">CFD</Link>
                             <button type="button" onClick={() => void withBoardContent(board, (cols, tasks) => exportBoardWorkbook(board, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">XLSX</button>
                             <button type="button" onClick={() => void withBoardContent(board, (cols, tasks, names) => exportBoardGanttWorkbook(board, cols, tasks, names))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
                             {isOwner && (
@@ -1012,6 +1014,7 @@ function Dashboard() {
                 </div>
                 <div className="board-toolbar">
                   <Link to={`/dashboard/gantt/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Diagrama Gantt</Link>
+                  <Link to={`/dashboard/flujo/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Flujo (CFD)</Link>
                   {messages.supported && (
                     <button type="button" onClick={() => setMessagesOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">
                       ✉ Mensajes
@@ -1159,16 +1162,21 @@ function Dashboard() {
                       />
                     ))}
                   </div>
-                  <DragOverlay dropAnimation={{ duration: 180, easing: 'ease-out' }}>
-                    {drag.activeTask && (
-                      <div className={`task-card task-card-${drag.activeTask.priority} drag-overlay`}>
-                        <p className="flex items-start gap-2">
-                          <span className="task-number">{numbers.get(drag.activeTask.id)}</span>
-                          <span className="task-title">{drag.activeTask.title}</span>
-                        </p>
-                      </div>
-                    )}
-                  </DragOverlay>
+                  {/* Portal al <body>: el panel del tablero usa backdrop-filter, que haría que la
+                      tarjeta flotante (position: fixed) se ubicara respecto al panel y no al cursor. */}
+                  {createPortal(
+                    <DragOverlay dropAnimation={{ duration: 180, easing: 'ease-out' }}>
+                      {drag.activeTask && (
+                        <div className={`task-card task-card-${drag.activeTask.priority} drag-overlay`}>
+                          <p className="flex items-start gap-2">
+                            <span className="task-number">{numbers.get(drag.activeTask.id)}</span>
+                            <span className="task-title">{drag.activeTask.title}</span>
+                          </p>
+                        </div>
+                      )}
+                    </DragOverlay>,
+                    document.body,
+                  )}
                   </DndContext>
                 )}
               </div>

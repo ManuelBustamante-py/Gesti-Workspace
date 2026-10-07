@@ -9,6 +9,7 @@ import Profile from '../pages/Profile'
 import ForgotPassword from '../pages/ForgotPassword'
 import ResetPassword from '../pages/ResetPassword'
 import BoardGantt from '../pages/BoardGantt'
+import BoardFlow from '../pages/BoardFlow'
 
 function AppRoutes() {
   return (
@@ -22,6 +23,7 @@ function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/gantt/:boardId" element={<BoardGantt />} />
+          <Route path="/dashboard/flujo/:boardId" element={<BoardFlow />} />
           <Route path="/profile" element={<Profile />} />
         </Route>
 
