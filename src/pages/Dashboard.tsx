@@ -1064,12 +1064,12 @@ function Dashboard() {
                   {boards.map((board) => {
                     const isOwner = board.owner_id === user?.id
                     return (
-                      <li key={board.id} className="glass-panel flex flex-col overflow-hidden rounded-2xl">
-                        {board.cover_url ? (
-                          <div className="board-card-cover" style={{ ...coverStyle(board.cover_url), borderBottomColor: board.color }} aria-hidden="true" />
-                        ) : (
-                          <div className="h-2" style={{ backgroundColor: board.color }} />
-                        )}
+                      <li
+                        key={board.id}
+                        className={`glass-panel flex flex-col overflow-hidden rounded-2xl ${board.cover_url ? 'board-cover' : ''}`}
+                        style={coverStyle(board.cover_url)}
+                      >
+                        <div className="h-2" style={{ backgroundColor: board.color }} />
                         <div className="flex flex-1 flex-col p-5">
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="min-w-0 break-words text-lg font-semibold text-white">{board.name}</h3>
@@ -1113,11 +1113,7 @@ function Dashboard() {
           )}
 
           {selectedBoard && (
-            <section
-              className={`glass-panel mt-6 rounded-2xl p-4 sm:p-6 ${selectedBoard.cover_url ? 'board-cover' : ''}`}
-              style={coverStyle(selectedBoard.cover_url)}
-              aria-label={`Tablero ${selectedBoard.name}`}
-            >
+            <section className="glass-panel mt-6 rounded-2xl p-4 sm:p-6" aria-label={`Tablero ${selectedBoard.name}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: selectedBoard.color }} />

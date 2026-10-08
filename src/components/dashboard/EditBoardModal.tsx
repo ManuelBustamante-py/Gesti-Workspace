@@ -189,7 +189,7 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
         </div>
         {coverUrl.trim() && (
           <div className="flex items-center gap-3">
-            {/* Vista previa con la misma capa oscura que se usa en el tablero. */}
+            {/* Vista previa con la misma capa oscura que la tarjeta del tablero. */}
             <div className="board-cover-preview" style={coverStyle(coverUrl.trim())} aria-hidden="true">
               <span style={{ backgroundColor: color }} />
             </div>
@@ -198,7 +198,7 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
             <div className="min-w-0 flex-1 text-xs text-[var(--text-muted)]">
               {coverFailed
                 ? <p className="text-[#e6c48c]">No se pudo cargar la imagen. Revisa que la URL apunte directo a una imagen pública.</p>
-                : <p>Se muestra oscurecida y con transparencia para no restar protagonismo a las tareas.</p>}
+                : <p>Se muestra oscurecida como fondo de la tarjeta del tablero en «Tus tableros».</p>}
               <button type="button" onClick={() => setCoverUrl('')} className="mt-1 underline hover:text-white">Quitar imagen</button>
             </div>
           </div>
