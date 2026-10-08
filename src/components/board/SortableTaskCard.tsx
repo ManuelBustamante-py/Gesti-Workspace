@@ -22,6 +22,7 @@ function SortableTaskCard({ dragEnabled, ...props }: SortableTaskCardProps) {
   return (
     <div
       ref={setNodeRef}
+      data-task-id={props.task.id}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={isDragging ? 'task-drag-placeholder' : undefined}
     >

@@ -19,6 +19,7 @@ import EditBoardModal from '../components/dashboard/EditBoardModal'
 import MessagesPanel from '../components/dashboard/MessagesPanel'
 import ToastStack from '../components/ui/ToastStack'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
+import TaskSearch from '../components/dashboard/TaskSearch'
 import type { ColumnStatus } from '../domain/columnStatus'
 import { DUE_SOON_DAYS, type BoardHighlight } from '../domain/deadlines'
 import { createsDependencyCycle, relationsFor } from '../domain/dependencies'
@@ -136,6 +137,10 @@ function Dashboard() {
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null)
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('all')
   const [highlight, setHighlight] = useState<BoardHighlight | null>(null)
+  // Tarea elegida en el buscador: se lleva a la vista cuando su tarjeta está en pantalla.
+  // Cada búsqueda es un objeto nuevo: elegir dos veces la misma tarea vuelve a llevar a ella.
+  const [foundTask, setFoundTask] = useState<{ id: string } | null>(null)
+  const handledFoundTaskRef = useRef<{ id: string } | null>(null)
 
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
   const boardData = useBoardData(selectedBoardId, Boolean(user && selectedBoard))
@@ -201,6 +206,29 @@ function Dashboard() {
       Object.entries(tasksByColumn).map(([columnId, tasks]) => [columnId, tasks.filter(matches)]),
     )
   }, [assigneeFilter, assignments, tasksByColumn, currentUserId])
+
+  function goToTask(taskId: string) {
+    const visible = Object.values(visibleTasksByColumn).some((tasks) => tasks.some((task) => task.id === taskId))
+    // Si el filtro de responsables la oculta, se quita para poder mostrarla.
+    if (!visible) setAssigneeFilter('all')
+    setFoundTask({ id: taskId })
+  }
+
+  // Lleva la tarjeta buscada a la vista (página, fila de columnas y lista de la
+  // columna) y la hace destellar. Si el filtro aún la oculta, espera al render.
+  useEffect(() => {
+    if (!foundTask || handledFoundTaskRef.current === foundTask) return
+    const card = document.querySelector<HTMLElement>(`[data-task-id="${foundTask.id}"]`)
+    if (!card) return
+    handledFoundTaskRef.current = foundTask
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center', inline: 'center' })
+    // Reinicia la animación aunque se busque dos veces seguidas la misma tarea.
+    card.classList.remove('task-found')
+    void card.offsetWidth
+    card.classList.add('task-found')
+    card.addEventListener('animationend', () => card.classList.remove('task-found'), { once: true })
+  }, [foundTask, visibleTasksByColumn])
 
   const relations = useMemo(() => relationsFor(allTasks, selectedRelationId), [allTasks, selectedRelationId])
 
@@ -1121,6 +1149,13 @@ function Dashboard() {
                         </form>
                       ) : (
                         <p className="mt-2 text-sm text-[var(--text-muted)]">Tu rol es de lectura: no puedes crear columnas ni tareas.</p>
+                      )}
+                      {allTasks.length > 0 && (
+                        <>
+                          <h3 className="mt-5 text-base font-medium text-white">Buscar tarea</h3>
+                          <p className="mb-3 mt-1 text-sm text-slate-400">Escribe el número o parte del título y elige una tarea para ir a ella.</p>
+                          <TaskSearch columns={columns} tasksByColumn={tasksByColumn} numbers={numbers} onSelect={goToTask} />
+                        </>
                       )}
                     </div>
                     <div>
