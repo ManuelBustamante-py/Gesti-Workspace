@@ -5,7 +5,7 @@ import { boardWorkingDays, type Board } from '../../services/boards'
 import type { BoardColumn } from '../../services/columns'
 import type { Task } from '../../services/tasks'
 import { resolveColumnStatus } from '../../domain/columnStatus'
-import { formatDateKey } from '../../domain/dates'
+import { formatDateKey, todayKey } from '../../domain/dates'
 import { activityNumbers } from '../../domain/numbering'
 import { planProjectDates, tasksDateRange, type TaskDates } from '../../domain/projectDates'
 
@@ -41,6 +41,9 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
   const [end, setEnd] = useState(board.end_date ?? '')
   // Al fijar el inicio por primera vez lo normal es registrarlo, no mover el proyecto.
   const [shiftTasks, setShiftTasks] = useState(Boolean(board.start_date))
+  // Ajustar al fin: por defecto solo si se cambió el fin; con el fin guardado
+  // sin cambios nunca se reprograma sin pedirlo.
+  const [fitChoice, setFitChoice] = useState<boolean | null>(null)
   const [content, setContent] = useState<BoardContent | null>(null)
   const [contentError, setContentError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -60,6 +63,9 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
     }
   }, [loadContent])
 
+  const endChanged = (end || null) !== (board.end_date ?? null)
+  const fit = fitChoice ?? endChanged
+
   const analysis = useMemo(() => {
     if (!content) return null
     const numbers = activityNumbers(content.columns, content.tasksByColumn)
@@ -76,6 +82,8 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
       start: nextStart !== (board.start_date ?? null) ? nextStart : null,
       end: nextEnd,
       shiftTasks,
+      fitToEnd: fit,
+      today: todayKey(),
       workingDays: boardWorkingDays(board),
     })
     // Sin cambio de inicio no se mueve nada, pero se revisa contra el inicio vigente.
@@ -85,13 +93,14 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
     const label = (ids: string[]) =>
       ids.slice(0, 8).map((id) => `#${numbers.get(id) ?? '?'}`).join(', ') + (ids.length > 8 ? ` y ${ids.length - 8} más` : '')
     return { numbers, tasksRange, plan, startBefore, label }
-  }, [board, content, end, shiftTasks, start])
+  }, [board, content, end, fit, shiftTasks, start])
 
   const datesChanged = (start || null) !== (board.start_date ?? null) || (end || null) !== (board.end_date ?? null)
   const startChanged = (start || null) !== (board.start_date ?? null)
   const invalidRange = Boolean(start && end && start > end)
   const plan = analysis?.plan
-  const moving = shiftTasks && plan ? plan.moved : []
+  const moving = plan?.moved ?? []
+  const showImpact = datesChanged || (plan?.overflowing.length ?? 0) > 0
   const canShift = Boolean(startChanged && start && plan && (board.start_date ?? analysis?.tasksRange.start))
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -170,7 +179,7 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
           </div>
           {invalidRange && <p className="mt-2 text-xs text-[var(--critical)]">El inicio no puede ser posterior al fin.</p>}
 
-          {datesChanged && !invalidRange && (
+          {showImpact && !invalidRange && (
             <div className="alert-warning mt-3 space-y-2 rounded-lg p-3 text-sm" role="status">
               <p className="font-semibold">⚠ Cambiar las fechas del proyecto puede reprogramar tareas</p>
               {!content && !contentError && <p>Calculando el impacto en las tareas…</p>}
@@ -186,6 +195,12 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
                       </span>
                     </label>
                   )}
+                  {plan.endAfterProject.length > 0 && !fit && (
+                    <p>
+                      {plan.endAfterProject.length} tarea(s) pendiente(s) quedarán después del fin comprometido. Marca «Ajustar…» para
+                      reprogramarlas, o revisa el fin.
+                    </p>
+                  )}
                   {moving.length > 0 && (
                     <ul className="project-dates-moves">
                       {moving.slice(0, PREVIEW_LIMIT).map(({ before, after }) => (
@@ -196,11 +211,18 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
                       {moving.length > PREVIEW_LIMIT && <li>y {moving.length - PREVIEW_LIMIT} tarea(s) más</li>}
                     </ul>
                   )}
-                  {plan.endAfterProject.length > 0 && (
-                    <p>
-                      {plan.endAfterProject.length} tarea(s) pendiente(s) terminan después del fin comprometido ({analysis.label(plan.endAfterProject)}).
-                      No se mueven: ajústalas o revisa el fin.
-                    </p>
+                  {plan.overflowing.length > 0 && (
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" checked={fit} onChange={(event) => setFitChoice(event.target.checked)} className="mt-1" />
+                      <span>
+                        Ajustar las tareas pendientes para que terminen dentro del fin comprometido ({plan.overflowing.length} se pasan:{' '}
+                        {analysis.label(plan.overflowing)}). Se reprograman proporcionalmente desde hoy: mantienen su orden y
+                        dependencias, pero se acortan sus duraciones.
+                      </span>
+                    </label>
+                  )}
+                  {plan.fitImpossible && (
+                    <p>El fin comprometido es hoy o ya pasó: no quedan días hábiles para reprogramar las pendientes.</p>
                   )}
                   {analysis.startBefore.length > 0 && (
                     <p>{analysis.startBefore.length} tarea(s) pendiente(s) empiezan antes del inicio del proyecto ({analysis.label(analysis.startBefore)}).</p>

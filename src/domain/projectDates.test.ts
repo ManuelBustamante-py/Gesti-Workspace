@@ -74,6 +74,47 @@ describe('planProjectDates', () => {
     expect(plan.startBeforeProject).toEqual(['a', 'b'])
   })
 
+  it('comprime las pendientes para que terminen en el fin, conservando dependencias', () => {
+    // a (mar 1 – vie 4) → b (lun 7 – vie 11). Fin: mar 8. Hoy: mar 1.
+    const plan = planProjectDates({
+      pendingTasks: pendingTasks.slice(0, 2), previousStart: null, start: null, end: '2026-09-08',
+      shiftTasks: false, fitToEnd: true, today: '2026-09-01', workingDays: weekdays,
+    })
+    expect(plan.overflowing).toEqual(['b'])
+    expect(plan.fitted).toBe(true)
+    expect(plan.moved.map(({ after }) => after)).toEqual([
+      { id: 'a', start_date: '2026-09-01', end_date: '2026-09-03' },
+      { id: 'b', start_date: '2026-09-04', end_date: '2026-09-08' },
+    ])
+    expect(plan.endAfterProject).toEqual([])
+  })
+
+  it('no toca lo que ya pasó y avisa si no quedan días para reprogramar', () => {
+    // a empezó antes de hoy: su inicio se mantiene y solo se acerca su fin.
+    const inProgress = [{ id: 'a', start_date: '2026-08-24', end_date: '2026-09-18' }]
+    const fitted = planProjectDates({
+      pendingTasks: inProgress, previousStart: null, start: null, end: '2026-09-11',
+      shiftTasks: false, fitToEnd: true, today: '2026-09-07', workingDays: weekdays,
+    })
+    expect(fitted.moved[0].after).toEqual({ id: 'a', start_date: '2026-08-24', end_date: '2026-09-11' })
+
+    const late = planProjectDates({
+      pendingTasks: inProgress, previousStart: null, start: null, end: '2026-09-04',
+      shiftTasks: false, fitToEnd: true, today: '2026-09-07', workingDays: weekdays,
+    })
+    expect(late.fitImpossible).toBe(true)
+    expect(late.moved).toEqual([])
+    expect(late.endAfterProject).toEqual(['a'])
+  })
+
+  it('sin ajustar al fin, solo informa las tareas que se pasan', () => {
+    const plan = planProjectDates({
+      pendingTasks, previousStart: null, start: null, end: '2026-09-08', shiftTasks: false, fitToEnd: false, today: '2026-09-01', workingDays: weekdays,
+    })
+    expect(plan.moved).toEqual([])
+    expect(plan.endAfterProject).toEqual(['b', 'd'])
+  })
+
   it('no mueve nada si no había un inicio previo o se quita el inicio', () => {
     expect(planProjectDates({ pendingTasks, previousStart: null, start: '2026-09-08', end: null, shiftTasks: true, workingDays: weekdays }).moved).toEqual([])
     expect(planProjectDates({ pendingTasks, previousStart: '2026-09-01', start: null, end: null, shiftTasks: true, workingDays: weekdays }).moved).toEqual([])
