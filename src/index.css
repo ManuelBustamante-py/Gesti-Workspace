@@ -22,7 +22,10 @@
 
 html {
   min-width: 320px;
+  /* clip y no hidden: hidden convierte el elemento en contenedor de scroll y el
+     panel lateral (position: sticky) dejaría de quedarse fijo. */
   overflow-x: hidden;
+  overflow-x: clip;
   background: var(--bg-main);
 }
 
@@ -31,6 +34,7 @@ body {
   min-height: 100vh;
   margin: 0;
   overflow-x: hidden;
+  overflow-x: clip;
   background:
     radial-gradient(circle at 15% 0%, rgba(166, 180, 184, 0.045), transparent 32rem),
     radial-gradient(circle at 90% 10%, rgba(38, 44, 47, 0.42), transparent 28rem),
@@ -392,8 +396,8 @@ textarea:focus {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(166, 180, 184, 0.35) transparent;
+  scrollbar-width: auto;
+  scrollbar-color: rgba(166, 180, 184, 0.45) rgba(166, 180, 184, 0.08);
 }
 
 .kanban-columns .column-panel {
@@ -436,12 +440,22 @@ textarea:focus {
 }
 
 .kanban-columns::-webkit-scrollbar {
-  height: 0.35rem;
+  height: 0.75rem;
+}
+
+.kanban-columns::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(166, 180, 184, 0.08);
 }
 
 .kanban-columns::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(166, 180, 184, 0.35);
+  background: rgba(166, 180, 184, 0.45) padding-box;
+}
+
+.kanban-columns::-webkit-scrollbar-thumb:hover {
+  background: rgba(166, 180, 184, 0.65) padding-box;
 }
 
 .sidebar-collapsed {
