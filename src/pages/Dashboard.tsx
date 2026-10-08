@@ -25,6 +25,7 @@ import { DUE_SOON_DAYS, type BoardHighlight } from '../domain/deadlines'
 import { createsDependencyCycle, relationsFor } from '../domain/dependencies'
 import { prependUniqueById } from '../domain/collections'
 import { activityNumbers } from '../domain/numbering'
+import { coverStyle } from '../domain/coverImage'
 import { boardPermissions, resolveBoardRole, roleEmotes, roleLabels, type BoardRole } from '../domain/roles'
 import { computeSchedule } from '../domain/schedule'
 import { boardWorkingDays } from '../domain/workSchedule'
@@ -461,7 +462,9 @@ function Dashboard() {
   async function handleUpdateBoard(values: EditBoardValues) {
     if (!editingBoard) return null
     try {
-      let updated = await updateBoard(editingBoard.id, values.name, values.description, values.color)
+      // La imagen solo se envía si cambió: así editar funciona aunque falte su migración.
+      const coverUrl = values.coverUrl !== (editingBoard.cover_url ?? null) ? values.coverUrl : undefined
+      let updated = await updateBoard(editingBoard.id, values.name, values.description, values.color, coverUrl)
       const datesChanged = values.start !== (editingBoard.start_date ?? null) || values.end !== (editingBoard.end_date ?? null)
       if (datesChanged || values.taskDates.length > 0) {
         updated = await rescheduleBoard(editingBoard.id, { start: values.start, end: values.end }, values.taskDates)
@@ -1062,7 +1065,11 @@ function Dashboard() {
                     const isOwner = board.owner_id === user?.id
                     return (
                       <li key={board.id} className="glass-panel flex flex-col overflow-hidden rounded-2xl">
-                        <div className="h-2" style={{ backgroundColor: board.color }} />
+                        {board.cover_url ? (
+                          <div className="board-card-cover" style={{ ...coverStyle(board.cover_url), borderBottomColor: board.color }} aria-hidden="true" />
+                        ) : (
+                          <div className="h-2" style={{ backgroundColor: board.color }} />
+                        )}
                         <div className="flex flex-1 flex-col p-5">
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="min-w-0 break-words text-lg font-semibold text-white">{board.name}</h3>
@@ -1106,7 +1113,11 @@ function Dashboard() {
           )}
 
           {selectedBoard && (
-            <section className="glass-panel mt-6 rounded-2xl p-4 sm:p-6" aria-label={`Tablero ${selectedBoard.name}`}>
+            <section
+              className={`glass-panel mt-6 rounded-2xl p-4 sm:p-6 ${selectedBoard.cover_url ? 'board-cover' : ''}`}
+              style={coverStyle(selectedBoard.cover_url)}
+              aria-label={`Tablero ${selectedBoard.name}`}
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: selectedBoard.color }} />

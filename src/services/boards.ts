@@ -28,6 +28,8 @@ export interface Board {
   start_date?: string | null
   /** Fin comprometido; null = la fecha de fin más tardía de las tareas. */
   end_date?: string | null
+  /** Imagen de fondo (URL https, migración 20261010090000). */
+  cover_url?: string | null
 }
 
 /** Fin contra el que se mide el proyecto: el comprometido o, si no hay, el del Gantt. */
@@ -103,6 +105,8 @@ export async function updateBoard(
   name: string,
   description: string,
   color: string,
+  /** undefined = no se modifica (así funciona aunque falte la migración). */
+  coverUrl?: string | null,
 ) {
   const { data, error } = await supabase
     .from('boards')
@@ -110,12 +114,16 @@ export async function updateBoard(
       name,
       description: description || null,
       color,
+      ...(coverUrl !== undefined ? { cover_url: coverUrl } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
     .select()
 
   if (error) {
+    if (/cover_url/.test(error.message)) {
+      throw new Error('Para usar imágenes de fondo aplica la migración 20261010090000_board_cover_image.sql en Supabase.')
+    }
     throw error
   }
 

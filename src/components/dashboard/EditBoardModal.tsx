@@ -5,6 +5,7 @@ import { boardWorkingDays, type Board } from '../../services/boards'
 import type { BoardColumn } from '../../services/columns'
 import type { Task } from '../../services/tasks'
 import { resolveColumnStatus } from '../../domain/columnStatus'
+import { coverStyle, normalizeCoverUrl } from '../../domain/coverImage'
 import { formatDateKey, todayKey } from '../../domain/dates'
 import { activityNumbers } from '../../domain/numbering'
 import { planProjectDates, tasksDateRange, type TaskDates } from '../../domain/projectDates'
@@ -15,6 +16,8 @@ export type EditBoardValues = {
   name: string
   description: string
   color: string
+  /** URL https de la imagen de fondo; null = sin imagen. */
+  coverUrl: string | null
   start: string | null
   end: string | null
   /** Tareas pendientes con fechas nuevas (vacío si no se mueven). */
@@ -37,6 +40,8 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
   const [name, setName] = useState(board.name)
   const [description, setDescription] = useState(board.description ?? '')
   const [color, setColor] = useState(board.color)
+  const [coverUrl, setCoverUrl] = useState(board.cover_url ?? '')
+  const [coverFailed, setCoverFailed] = useState(false)
   const [start, setStart] = useState(board.start_date ?? '')
   const [end, setEnd] = useState(board.end_date ?? '')
   // Al fijar el inicio por primera vez lo normal es registrarlo, no mover el proyecto.
@@ -109,6 +114,13 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
       setError('El tablero debe tener un nombre.')
       return
     }
+    let cover: string | null
+    try {
+      cover = normalizeCoverUrl(coverUrl)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'URL de imagen inválida.')
+      return
+    }
     if (invalidRange) {
       setError('El inicio del proyecto no puede ser posterior al fin.')
       return
@@ -122,6 +134,7 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
       name: name.trim(),
       description: description.trim(),
       color,
+      coverUrl: cover,
       start: start || null,
       end: end || null,
       taskDates: moving.map(({ after }) => after),
@@ -154,10 +167,42 @@ function EditBoardModal({ board, loadContent, onSave, onClose }: EditBoardModalP
           Descripción
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="theme-input mt-1 w-full resize-none rounded-lg px-4 py-3" />
         </label>
-        <label className="field-label">
-          Color
-          <input type="color" value={color} onChange={(event) => setColor(event.target.value)} className="theme-input mt-1 block h-10 w-16 cursor-pointer rounded" />
-        </label>
+        <div className="flex flex-wrap items-start gap-4">
+          <label className="field-label">
+            Color
+            <input type="color" value={color} onChange={(event) => setColor(event.target.value)} className="theme-input mt-1 block h-10 w-16 cursor-pointer rounded" />
+          </label>
+          <label className="field-label min-w-0 flex-1">
+            Imagen de fondo (URL, opcional)
+            <input
+              type="url"
+              inputMode="url"
+              value={coverUrl}
+              onChange={(event) => {
+                setCoverUrl(event.target.value)
+                setCoverFailed(false)
+              }}
+              placeholder="https://…/imagen.jpg"
+              className="theme-input mt-1 w-full rounded-lg px-3 py-2"
+            />
+          </label>
+        </div>
+        {coverUrl.trim() && (
+          <div className="flex items-center gap-3">
+            {/* Vista previa con la misma capa oscura que se usa en el tablero. */}
+            <div className="board-cover-preview" style={coverStyle(coverUrl.trim())} aria-hidden="true">
+              <span style={{ backgroundColor: color }} />
+            </div>
+            {/* La imagen oculta solo detecta si la URL carga. */}
+            <img src={coverUrl.trim()} alt="" className="hidden" onError={() => setCoverFailed(true)} onLoad={() => setCoverFailed(false)} />
+            <div className="min-w-0 flex-1 text-xs text-[var(--text-muted)]">
+              {coverFailed
+                ? <p className="text-[#e6c48c]">No se pudo cargar la imagen. Revisa que la URL apunte directo a una imagen pública.</p>
+                : <p>Se muestra oscurecida y con transparencia para no restar protagonismo a las tareas.</p>}
+              <button type="button" onClick={() => setCoverUrl('')} className="mt-1 underline hover:text-white">Quitar imagen</button>
+            </div>
+          </div>
+        )}
 
         <fieldset className="project-dates">
           <legend className="text-sm font-medium text-white">Fechas del proyecto</legend>
