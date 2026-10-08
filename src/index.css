@@ -377,11 +377,37 @@ textarea:focus {
   transition: width 180ms ease, transform 180ms ease;
 }
 
+/* Todas las columnas en una fila: se ven 3 (2 en tablet) y el resto se alcanza
+   con scroll horizontal, solo dentro de este contenedor. dnd-kit desplaza el
+   contenedor solo al arrastrar una tarjeta cerca del borde. */
 .kanban-columns {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
+  --kanban-gap: 1rem;
+  --kanban-visible: 3;
+  display: flex;
+  gap: var(--kanban-gap);
   min-width: 0;
+  max-width: 100%;
+  /* Espacio para la barra y la sombra de las columnas, que el scroll recortaría. */
+  padding: 0.15rem 0.1rem 0.75rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(166, 180, 184, 0.35) transparent;
+}
+
+.kanban-columns .column-panel {
+  flex: 0 0 calc((100% - (var(--kanban-visible) - 1) * var(--kanban-gap)) / var(--kanban-visible));
+  scroll-snap-align: start;
+}
+
+.kanban-columns::-webkit-scrollbar {
+  height: 0.35rem;
+}
+
+.kanban-columns::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(166, 180, 184, 0.35);
 }
 
 .sidebar-collapsed {
@@ -449,7 +475,7 @@ textarea:focus {
 
 @media (min-width: 768px) and (max-width: 1099px) {
   .kanban-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    --kanban-visible: 2;
   }
 }
 
@@ -529,29 +555,12 @@ textarea:focus {
   }
 
   .kanban-columns {
-    display: flex;
-    max-width: 100%;
     margin-right: -0.25rem;
     padding: 0.15rem 0.25rem 0.75rem 0.05rem;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(166, 180, 184, 0.35) transparent;
   }
 
   .kanban-columns .column-panel {
     flex: 0 0 min(82vw, 22rem);
-    scroll-snap-align: start;
-  }
-
-  .kanban-columns::-webkit-scrollbar {
-    height: 0.35rem;
-  }
-
-  .kanban-columns::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(166, 180, 184, 0.35);
   }
 }
 
