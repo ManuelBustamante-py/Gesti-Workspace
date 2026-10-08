@@ -1628,6 +1628,37 @@ a:focus-visible {
 .flow-finish-dot { fill: #e8ecec; stroke: #1b2023; stroke-width: 2; }
 .flow-direct-label { fill: #fff; font-size: 11px; font-weight: 600; paint-order: stroke; stroke: rgba(0, 0, 0, 0.45); stroke-width: 3px; }
 .flow-crosshair { stroke: rgba(255, 255, 255, 0.45); stroke-width: 1; }
+.flow-plot { cursor: crosshair; }
+.flow-selection { fill: rgba(166, 180, 184, 0.14); stroke: rgba(166, 180, 184, 0.55); stroke-width: 1; stroke-dasharray: 4 3; }
+
+/* Zoom del CFD */
+.flow-zoom-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.25rem 0.5rem 0.75rem;
+}
+.flow-zoom-group { display: inline-flex; gap: 0.25rem; }
+.flow-zoom-button,
+.flow-zoom-preset {
+  min-width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(166, 180, 184, 0.18);
+  border-radius: 0.5rem;
+  background: rgba(166, 180, 184, 0.06);
+  padding: 0 0.6rem;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.flow-zoom-button { font-size: 0.95rem; font-weight: 600; }
+.flow-zoom-button:hover:not(:disabled),
+.flow-zoom-preset:hover { border-color: rgba(166, 180, 184, 0.4); }
+.flow-zoom-button:disabled { opacity: 0.35; cursor: not-allowed; }
+.flow-zoom-preset-active { border-color: var(--accent-mint); background: rgba(166, 180, 184, 0.16); }
+.flow-zoom-range { color: var(--text-main); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.flow-zoom-hint { margin-left: auto; color: var(--text-muted); font-size: 0.72rem; }
 
 .flow-tooltip {
   position: absolute;
