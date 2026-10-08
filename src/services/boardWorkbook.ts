@@ -5,9 +5,12 @@ import { boardSchedule, describeWorkingDays } from '../domain/workSchedule'
 import type { BoardColumn } from './columns'
 import type { Task, TaskPriority } from './tasks'
 import {
+  COLUMN_STATUSES,
   columnStatusLabels,
   columnStatusProgress,
+  inferColumnStatus,
   resolveColumnStatus,
+  type ColumnStatus,
 } from '../domain/columnStatus'
 import {
   addDays,
@@ -31,14 +34,20 @@ import { computeSchedule } from '../domain/schedule'
 // La librería pesa ~400 KB: se carga solo al importar o exportar.
 const loadXlsx = () => import('xlsx-js-style')
 
+// «Estado columna», «Fecha completada» y «En columna desde» hacen que exportar
+// e importar conserve las fechas reales del flujo acumulado. Son opcionales al
+// importar: los archivos anteriores siguen funcionando.
 export const WORKBOOK_HEADERS = [
   'N° Tarea',
   'Columna',
+  'Estado columna',
   'Tarea',
   'Descripción',
   'Prioridad',
   'Fecha inicio',
   'Fecha fin',
+  'Fecha completada',
+  'En columna desde',
   'Predecesoras',
 ] as const
 
@@ -51,6 +60,10 @@ export type ImportedTask = {
   priority: TaskPriority
   startDate: string | null
   endDate: string | null
+  /** «Completada el»: solo en columnas Completado. */
+  completedAt: string | null
+  /** «En esta columna desde»: solo en columnas que no son Completado. */
+  columnEnteredAt: string | null
   activityNumber: number
   predecessorNumbers: number[]
 }
@@ -59,7 +72,7 @@ export type ImportedBoard = {
   name: string
   description: string
   color: string
-  columns: Array<{ name: string; tasks: ImportedTask[] }>
+  columns: Array<{ name: string; status: ColumnStatus; tasks: ImportedTask[] }>
 }
 
 export type ImportResult = {
@@ -149,6 +162,8 @@ function styleRange(sheet: WorkSheet, XLSX: typeof import('xlsx-js-style'), row:
 type ActivityRow = {
   number: number | ''
   column: string
+  /** Estado de la columna (Pendiente, En progreso, Completado). */
+  status: string
   title: string
   /** Texto libre que no pertenece a ninguna sección con columna propia. */
   description: string
@@ -157,12 +172,27 @@ type ActivityRow = {
   priority: string
   start: string | null
   end: string | null
+  completed: string | null
+  entered: string | null
   predecessors: string
 }
 
 const MAX_SECTION_COLUMNS = 10
-const BASE_WIDTHS = { number: 9, column: 14, title: 30, description: 34, priority: 10, date: 12, predecessors: 13 }
+const HEADER_WIDTHS: Record<WorkbookHeader, number> = {
+  'N° Tarea': 9,
+  Columna: 14,
+  'Estado columna': 13,
+  Tarea: 30,
+  Descripción: 34,
+  Prioridad: 10,
+  'Fecha inicio': 12,
+  'Fecha fin': 12,
+  'Fecha completada': 13,
+  'En columna desde': 13,
+  Predecesoras: 13,
+}
 const SECTION_WIDTH = 44
+const headerColumn = (header: WorkbookHeader) => WORKBOOK_HEADERS.indexOf(header)
 
 /**
  * Reparte las descripciones con secciones «▌Título» en columnas propias para
@@ -210,31 +240,32 @@ async function writeActivitiesWorkbook(
   const XLSX = await loadXlsx()
   const headers = [...WORKBOOK_HEADERS, ...sectionTitles]
   const lastColumn = headers.length - 1
+  const sectionStart = WORKBOOK_HEADERS.length
   const widths = [
-    BASE_WIDTHS.number,
-    BASE_WIDTHS.column,
-    BASE_WIDTHS.title,
-    sectionTitles.length ? BASE_WIDTHS.description : 70,
-    BASE_WIDTHS.priority,
-    BASE_WIDTHS.date,
-    BASE_WIDTHS.date,
-    BASE_WIDTHS.predecessors,
+    ...WORKBOOK_HEADERS.map((header) => (header === 'Descripción' && !sectionTitles.length ? 70 : HEADER_WIDTHS[header])),
     ...sectionTitles.map((title) => (title.length <= 18 ? Math.max(12, title.length + 4) : SECTION_WIDTH)),
   ]
 
+  const values = (row: ActivityRow): Record<WorkbookHeader, CellValue> => ({
+    'N° Tarea': row.number,
+    Columna: row.column,
+    'Estado columna': row.status,
+    Tarea: row.title,
+    Descripción: row.description,
+    Prioridad: row.priority,
+    'Fecha inicio': dateCell(row.start),
+    'Fecha fin': dateCell(row.end),
+    'Fecha completada': dateCell(row.completed),
+    'En columna desde': dateCell(row.entered),
+    Predecesoras: row.predecessors,
+  })
+
   const sheet = XLSX.utils.aoa_to_sheet([
     headers,
-    ...rows.map((row) => [
-      row.number,
-      row.column,
-      row.title,
-      row.description,
-      row.priority,
-      dateCell(row.start),
-      dateCell(row.end),
-      row.predecessors,
-      ...sectionTitles.map((title) => row.sections[title] ?? ''),
-    ]),
+    ...rows.map((row) => {
+      const cells = values(row)
+      return [...WORKBOOK_HEADERS.map((header) => cells[header]), ...sectionTitles.map((title) => row.sections[title] ?? '')]
+    }),
   ])
 
   sheet['!cols'] = widths.map((wch) => ({ wch }))
@@ -242,29 +273,30 @@ async function writeActivitiesWorkbook(
     { hpt: 32 },
     ...rows.map((row) => ({
       hpt: rowHeightFor([
-        [row.title, widths[2]],
-        [row.description, widths[3]],
-        ...sectionTitles.map((title, index): [string, number] => [row.sections[title] ?? '', widths[8 + index]]),
+        [row.title, widths[headerColumn('Tarea')]],
+        [row.description, widths[headerColumn('Descripción')]],
+        ...sectionTitles.map((title, index): [string, number] => [row.sections[title] ?? '', widths[sectionStart + index]]),
       ]),
     })),
   ]
   sheet['!autofilter'] = { ref: `A1:${XLSX.utils.encode_col(lastColumn)}${rows.length + 1}` }
   styleRange(sheet, XLSX, 0, 0, lastColumn, headerStyle)
   if (sectionTitles.length) {
-    styleRange(sheet, XLSX, 0, 8, lastColumn, { ...headerStyle, fill: { fgColor: { rgb: COLORS.headerAlt } } })
+    styleRange(sheet, XLSX, 0, sectionStart, lastColumn, { ...headerStyle, fill: { fgColor: { rgb: COLORS.headerAlt } } })
   }
 
+  const centered: WorkbookHeader[] = ['N° Tarea', 'Estado columna', 'Fecha inicio', 'Fecha fin', 'Fecha completada', 'En columna desde', 'Predecesoras']
   rows.forEach((row, index) => {
     const r = index + 1
     const zebra = index % 2 === 1
     styleRange(sheet, XLSX, r, 0, lastColumn, bodyStyle({ zebra, wrap: true }))
-    styleRange(sheet, XLSX, r, 0, 0, bodyStyle({ zebra, center: true }))
-    styleRange(sheet, XLSX, r, 2, 2, { ...bodyStyle({ zebra, wrap: true }), font: { bold: true, color: { rgb: COLORS.text } } })
-    styleRange(sheet, XLSX, r, 5, 7, bodyStyle({ zebra, center: true }))
+    centered.forEach((header) => styleRange(sheet, XLSX, r, headerColumn(header), headerColumn(header), bodyStyle({ zebra, center: true })))
+    const titleColumn = headerColumn('Tarea')
+    styleRange(sheet, XLSX, r, titleColumn, titleColumn, { ...bodyStyle({ zebra, wrap: true }), font: { bold: true, color: { rgb: COLORS.text } } })
     const priorityKey = (Object.keys(priorityLabel) as TaskPriority[]).find(
       (key) => priorityLabel[key] === row.priority,
     )
-    styleRange(sheet, XLSX, r, 4, 4, {
+    styleRange(sheet, XLSX, r, headerColumn('Prioridad'), headerColumn('Prioridad'), {
       ...bodyStyle({ zebra, center: true }),
       font: { bold: true, color: { rgb: COLORS.priority[priorityKey ?? 'medium'] } },
     })
@@ -278,10 +310,13 @@ async function writeActivitiesWorkbook(
       ['Cómo completar la plantilla'],
       ['N° Tarea', 'Número único de la actividad. Se usa en la columna Predecesoras.'],
       ['Columna', 'Nombre de la columna Kanban (p. ej. Por hacer, En progreso, Completado). Se crea si no existe.'],
+      ['Estado columna', 'Opcional: Pendiente, En progreso o Completado. Si se deja vacío se deduce del nombre de la columna.'],
       ['Tarea', 'Título corto de la actividad. Obligatorio.'],
       ['Descripción', 'Texto libre. Admite saltos de línea (Alt+Enter).'],
       ['Prioridad', 'Alta, Media o Baja.'],
       ['Fecha inicio / Fecha fin', 'Fecha de Excel o texto AAAA-MM-DD o DD-MM-AAAA. La de inicio no puede ser posterior a la de fin.'],
+      ['Fecha completada', 'Opcional: fecha real en que se terminó. Solo en columnas Completado; no puede ser futura. La usa el flujo acumulado (CFD).'],
+      ['En columna desde', 'Opcional: fecha real en que la tarea entró a su columna. No aplica a columnas Completado; no puede ser futura.'],
       ['Predecesoras', 'Números de tarea separados por coma (p. ej. 4, 5). La actividad empieza cuando terminan todas.'],
       ['Columnas extra', 'Puedes añadir columnas después de «Predecesoras» (p. ej. «Historia de usuario», «Criterios de aceptación»). Cada una se importa como una sección de la descripción y el tablero la muestra con su título.'],
       ['Formato del texto', 'Dentro de cualquier celda de texto: «1.» para pasos numerados y «•» o «-» para viñetas. En Descripción también puedes crear secciones con «▌Título» o «## Título».'],
@@ -310,7 +345,7 @@ export async function downloadBoardTemplate() {
   await writeActivitiesWorkbook(
     [
       {
-        number: 1, column: 'Por hacer', title: 'Ejemplo: definir alcance', priority: 'Alta', start: '2026-12-01', end: '2026-12-11', predecessors: '',
+        number: 1, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: definir alcance', priority: 'Alta', start: '2026-12-01', end: '2026-12-11', completed: null, entered: null, predecessors: '',
         ...example('Sprint 1 · Peso 3', [
           'Como responsable del proyecto,\nquiero definir el alcance,\npara alinear al equipo.',
           '1. Alcance documentado.\n2. Validado con el cliente.',
@@ -318,11 +353,12 @@ export async function downloadBoardTemplate() {
         ]),
       },
       {
-        number: 2, column: 'Por hacer', title: 'Ejemplo: diseñar solución', priority: 'Media', start: '2026-12-14', end: '2026-12-18', predecessors: '1',
+        number: 2, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: diseñar solución', priority: 'Media', start: '2026-12-14', end: '2026-12-18', completed: null, entered: null, predecessors: '1',
         ...example('Reemplaza o elimina estas filas. Las columnas extra son opcionales.', []),
       },
       {
-        number: 3, column: 'Completado', title: 'Ejemplo: reunión inicial', priority: 'Baja', start: '2026-11-30', end: '2026-11-30', predecessors: '',
+        // Fecha completada pasada: la plantilla se puede importar tal cual.
+        number: 3, column: 'Completado', status: 'Completado', title: 'Ejemplo: reunión inicial', priority: 'Baja', start: '2026-09-28', end: '2026-09-28', completed: '2026-09-28', entered: null, predecessors: '',
         ...example('', []),
       },
     ],
@@ -344,12 +380,15 @@ export async function exportBoardWorkbook(
   const rows: ActivityRow[] = entries.map(({ column, task }, index) => ({
     number: numbers.get(task.id) ?? '',
     column: column.name,
+    status: columnStatusLabels[resolveColumnStatus(column)],
     title: task.title,
     description: sectionColumns ? sectionColumns.rows[index].intro : task.description ?? '',
     sections: sectionColumns ? sectionColumns.rows[index].sections : {},
     priority: priorityLabel[task.priority],
     start: task.start_date,
     end: task.end_date,
+    completed: task.completed_at ?? null,
+    entered: task.column_entered_at ?? null,
     predecessors: (task.predecessor_ids ?? [])
       .map((id) => numbers.get(id))
       .filter((value): value is number => value !== undefined)
@@ -358,7 +397,20 @@ export async function exportBoardWorkbook(
   // Un tablero sin tareas exporta igualmente sus columnas.
   const exportRows = rows.length > 0
     ? rows
-    : columns.map((column) => ({ number: '' as const, column: column.name, title: '', description: '', sections: {}, priority: 'Media', start: null, end: null, predecessors: '' }))
+    : columns.map((column) => ({
+      number: '' as const,
+      column: column.name,
+      status: columnStatusLabels[resolveColumnStatus(column)],
+      title: '',
+      description: '',
+      sections: {},
+      priority: 'Media',
+      start: null,
+      end: null,
+      completed: null,
+      entered: null,
+      predecessors: '',
+    }))
 
   await writeActivitiesWorkbook(exportRows, sectionColumns?.titles ?? [], `${fileSafeName(board.name)}.xlsx`, false)
 }
@@ -633,6 +685,13 @@ export function normalizeImportedDate(value: unknown, context: string): string |
   return key
 }
 
+/** «Completado», «done»… → estado; null si la celda está vacía o no se reconoce. */
+function statusFromValue(value: unknown): ColumnStatus | null {
+  const normalized = cellText(value).toLowerCase()
+  if (!normalized) return null
+  return COLUMN_STATUSES.find((status) => status === normalized || columnStatusLabels[status].toLowerCase() === normalized) ?? null
+}
+
 // «Responsables» se ignora: se asignan desde la plataforma, por cuenta de cada colaborador.
 const KNOWN_IMPORT_HEADERS = new Set<string>([...WORKBOOK_HEADERS, 'N° actividad', 'Fecha vencimiento', 'Responsables'])
 
@@ -649,8 +708,10 @@ type ImportedRow = Partial<Record<WorkbookHeader | 'N° actividad' | 'Fecha venc
 export function parseImportedRows(rows: ImportedRow[], fileName: string): ImportResult {
   const warnings: string[] = []
   const errors: string[] = []
-  const grouped = new Map<string, ImportedBoard['columns'][number]>()
+  type ParsedColumn = { name: string; declaredStatus: ColumnStatus | null; tasks: Array<ImportedTask & { line: string }> }
+  const grouped = new Map<string, ParsedColumn>()
   const tasksByNumber = new Map<number, ImportedTask>()
+  const today = todayKey()
   let nextActivityNumber = 1
 
   rows.forEach((row, index) => {
@@ -661,8 +722,18 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
       if (title) warnings.push(`${line}: la tarea "${title}" no tiene columna y se omitió.`)
       return
     }
-    const column = grouped.get(columnName) ?? { name: columnName, tasks: [] }
+    const column = grouped.get(columnName) ?? { name: columnName, declaredStatus: null, tasks: [] }
     grouped.set(columnName, column)
+
+    // El estado se toma de la primera fila de la columna que lo indique.
+    const declaredStatus = statusFromValue(row['Estado columna'])
+    if (cellText(row['Estado columna']) && !declaredStatus) {
+      warnings.push(`${line}: el estado "${cellText(row['Estado columna'])}" no se reconoce (usa Pendiente, En progreso o Completado); se deduce del nombre de la columna.`)
+    } else if (declaredStatus && column.declaredStatus && declaredStatus !== column.declaredStatus) {
+      warnings.push(`${line}: la columna «${columnName}» ya tenía estado ${columnStatusLabels[column.declaredStatus]}; se mantiene.`)
+    } else if (declaredStatus) {
+      column.declaredStatus = declaredStatus
+    }
     if (!title) return
 
     const declaredNumber = Number.parseInt(String(row['N° Tarea'] ?? row['N° actividad'] ?? ''), 10)
@@ -674,10 +745,14 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
 
     let startDate: string | null = null
     let endDate: string | null = null
+    let completedAt: string | null = null
+    let columnEnteredAt: string | null = null
     try {
       startDate = normalizeImportedDate(row['Fecha inicio'], `${line}, Fecha inicio`)
       endDate = normalizeImportedDate(row['Fecha fin'], `${line}, Fecha fin`) ??
         normalizeImportedDate(row['Fecha vencimiento'], `${line}, Fecha vencimiento`)
+      completedAt = normalizeImportedDate(row['Fecha completada'], `${line}, Fecha completada`)
+      columnEnteredAt = normalizeImportedDate(row['En columna desde'], `${line}, En columna desde`)
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
       return
@@ -686,8 +761,18 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
       errors.push(`${line}: la fecha de inicio es posterior a la de fin.`)
       return
     }
+    // Son fechas reales (ya ocurridas): el tablero tampoco permite registrarlas a futuro.
+    if (completedAt && completedAt > today) {
+      warnings.push(`${line}: la fecha completada ${formatDateKey(completedAt)} es futura; se ignoró.`)
+      completedAt = null
+    }
+    if (columnEnteredAt && columnEnteredAt > today) {
+      warnings.push(`${line}: la fecha «En columna desde» ${formatDateKey(columnEnteredAt)} es futura; se ignoró.`)
+      columnEnteredAt = null
+    }
 
-    const task: ImportedTask = {
+    const task: ImportedTask & { line: string } = {
+      line,
       title,
       description: composeDescription(
         cellText(row['Descripción']),
@@ -698,6 +783,8 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
       priority: priorityFromValue(row.Prioridad),
       startDate,
       endDate,
+      completedAt,
+      columnEnteredAt,
       activityNumber,
       predecessorNumbers: [...new Set(
         String(row.Predecesoras ?? '')
@@ -743,12 +830,32 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
     throw new Error('Incluye al menos una fila con Columna y Tarea.')
   }
 
+  // Cada fecha real solo vale en su tipo de columna (igual que en la base de datos).
+  const columns = [...grouped.values()].map(({ name, declaredStatus, tasks }) => {
+    const status = declaredStatus ?? inferColumnStatus(name)
+    return {
+      name,
+      status,
+      tasks: tasks.map(({ line, ...task }) => {
+        if (status !== 'done' && task.completedAt) {
+          warnings.push(`${line}: «Fecha completada» solo se guarda en columnas Completado («${name}» es ${columnStatusLabels[status]}); se ignoró.`)
+          task.completedAt = null
+        }
+        if (status === 'done' && task.columnEnteredAt) {
+          warnings.push(`${line}: «En columna desde» no aplica a columnas Completado (usa «Fecha completada»); se ignoró.`)
+          task.columnEnteredAt = null
+        }
+        return task
+      }),
+    }
+  })
+
   return {
     board: {
       name: fileName.replace(/\.[^.]+$/, '').trim() || 'Tablero importado',
       description: 'Tablero importado desde una plantilla XLSX.',
       color: '#a6b4b8',
-      columns: [...grouped.values()],
+      columns,
     },
     warnings,
   }

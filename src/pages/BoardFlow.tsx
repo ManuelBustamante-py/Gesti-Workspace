@@ -29,7 +29,9 @@ const MAX_HISTORY_DAYS = 182
 const number = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
 const longDate = (day: string) => formatDateKey(day, { day: 'numeric', month: 'long', year: 'numeric' })
 
-function riskMessage(forecast: FlowForecast) {
+/** committed: el plazo es el fin comprometido del tablero y no el fin más tardío del Gantt. */
+function riskMessage(forecast: FlowForecast, committed: boolean) {
+  const deadlineName = committed ? 'fin comprometido' : 'fin planificado en el Gantt'
   const pace = `${number.format(forecast.throughputPerWeek)} tareas/semana`
   switch (forecast.risk) {
     case 'complete':
@@ -38,36 +40,36 @@ function riskMessage(forecast: FlowForecast) {
       return {
         tone: 'danger',
         icon: '⛔',
-        title: 'Fin planificado vencido',
-        text: `El Gantt terminaba el ${longDate(forecast.deadline!)} y aún quedan ${forecast.remaining} tarea(s) por completar${forecast.projectedFinish ? `. Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish)}.` : '.'}`,
+        title: committed ? 'Fin comprometido vencido' : 'Fin planificado vencido',
+        text: `${committed ? 'El fin comprometido era' : 'El Gantt terminaba'} el ${longDate(forecast.deadline!)} y aún quedan ${forecast.remaining} tarea(s) por completar${forecast.projectedFinish ? `. Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish)}.` : '.'}`,
       }
     case 'at_risk':
       return {
         tone: 'danger',
         icon: '⚠',
         title: `Riesgo de retraso: ${forecast.daysLate} día(s)`,
-        text: `Al ritmo actual (${pace}) el proyecto terminaría el ${longDate(forecast.projectedFinish!)}, después del fin planificado en el Gantt (${longDate(forecast.deadline!)}).${forecast.requiredPerWeek ? ` Para cumplir se necesitan ${number.format(forecast.requiredPerWeek)} tareas/semana.` : ''}`,
+        text: `Al ritmo actual (${pace}) el proyecto terminaría el ${longDate(forecast.projectedFinish!)}, después del ${deadlineName} (${longDate(forecast.deadline!)}).${forecast.requiredPerWeek ? ` Para cumplir se necesitan ${number.format(forecast.requiredPerWeek)} tareas/semana.` : ''}`,
       }
     case 'no_velocity':
       return {
         tone: 'warning',
         icon: '⚠',
         title: 'Sin velocidad medible',
-        text: `No se completó ninguna tarea en los últimos ${THROUGHPUT_WINDOW_DAYS} días, así que no es posible proyectar la entrega. Quedan ${forecast.remaining} tarea(s)${forecast.deadline ? ` y el Gantt termina el ${longDate(forecast.deadline)}` : ''}.`,
+        text: `No se completó ninguna tarea en los últimos ${THROUGHPUT_WINDOW_DAYS} días, así que no es posible proyectar la entrega. Quedan ${forecast.remaining} tarea(s)${forecast.deadline ? ` y el ${deadlineName} es el ${longDate(forecast.deadline)}` : ''}.`,
       }
     case 'no_deadline':
       return {
         tone: 'info',
         icon: 'ℹ',
         title: `Proyección: ${longDate(forecast.projectedFinish!)}`,
-        text: `Al ritmo actual (${pace}). Añade fechas a las tareas para compararla con un plazo en el Gantt.`,
+        text: `Al ritmo actual (${pace}). Define un fin comprometido en «Editar» del tablero, o añade fechas a las tareas, para compararla con un plazo.`,
       }
     default:
       return {
         tone: 'success',
         icon: '✓',
         title: 'En plazo',
-        text: `Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish!)}, ${Math.abs(forecast.daysLate ?? 0)} día(s) antes del fin planificado en el Gantt (${longDate(forecast.deadline!)}).`,
+        text: `Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish!)}, ${Math.abs(forecast.daysLate ?? 0)} día(s) antes del ${deadlineName} (${longDate(forecast.deadline!)}).`,
       }
   }
 }
@@ -147,7 +149,12 @@ function BoardFlow() {
     return result
   }, [columns, tasksByColumn])
   const confirmedCount = Object.keys(statusDates).length
-  const deadline = useMemo(() => ganttDeadline(Object.values(tasksByColumn).flat()), [tasksByColumn])
+  // El fin comprometido del tablero manda; sin él, el fin más tardío de las tareas (Gantt).
+  const committed = Boolean(board?.end_date)
+  const deadline = useMemo(
+    () => board?.end_date ?? ganttDeadline(Object.values(tasksByColumn).flat()),
+    [board?.end_date, tasksByColumn],
+  )
   const today = todayKey()
   const allPoints = useMemo(
     () => buildDailyFlow(applyStatusDates(events, statusDates), today),
@@ -173,7 +180,7 @@ function BoardFlow() {
     )
   }
 
-  const risk = forecast ? riskMessage(forecast) : null
+  const risk = forecast ? riskMessage(forecast, committed) : null
 
   return (
     <main className="min-h-screen bg-[var(--bg-main)] px-3 py-4 text-slate-100 sm:px-6 sm:py-7">
@@ -250,7 +257,7 @@ function BoardFlow() {
               </div>
               <div className="stat-tile">
                 <span className="stat-value text-lg">{forecast.deadline ? formatDateKey(forecast.deadline, { day: 'numeric', month: 'short' }) : '—'}</span>
-                <span className="stat-label">Fin planificado (Gantt)</span>
+                <span className="stat-label">{committed ? 'Fin comprometido' : 'Fin planificado (Gantt)'}</span>
               </div>
             </div>
 
@@ -272,7 +279,7 @@ function BoardFlow() {
                   <li key={status}><span className={`flow-swatch flow-key-${status}`} aria-hidden="true" />{flowLabels[status]}</li>
                 ))}
                 <li><span className="flow-swatch-line flow-swatch-projection" aria-hidden="true" />Proyección de lo completado</li>
-                <li><span className="flow-swatch-line flow-swatch-deadline" aria-hidden="true" />Fin planificado (Gantt)</li>
+                <li><span className="flow-swatch-line flow-swatch-deadline" aria-hidden="true" />{committed ? 'Fin comprometido' : 'Fin planificado (Gantt)'}</li>
                 <li><span className="flow-swatch-line flow-swatch-today" aria-hidden="true" />Hoy</li>
               </ul>
 
@@ -295,7 +302,7 @@ function BoardFlow() {
                     </table>
                   </div>
                 ) : chartWidth > 0 && points.length > 0 ? (
-                  <FlowChart points={points} forecast={forecast} width={chartWidth} narrow={narrow} />
+                  <FlowChart points={points} forecast={forecast} width={chartWidth} narrow={narrow} deadlineLabel={committed ? 'Fin comprometido' : 'Fin Gantt'} />
                 ) : null}
               </div>
 

@@ -776,6 +776,23 @@ textarea:focus {
   color: #e6c48c;
 }
 
+/* Fechas del proyecto (Editar tablero) */
+.project-dates {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 1rem;
+}
+.project-dates-moves {
+  max-height: 8.5rem;
+  overflow-y: auto;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 0.4rem 0.6rem;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.project-dates-moves li + li { margin-top: 0.15rem; }
+
 .role-pill {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
@@ -1258,6 +1275,32 @@ a:focus-visible {
 
 .gantt-day-off { background: rgba(255, 255, 255, 0.045); color: #6f7b80; }
 .gantt-day-today { background: rgba(190, 242, 100, 0.18); color: #ecfccb; font-weight: 700; }
+
+/* Fechas del proyecto en el Gantt: inicio (azul) y fin comprometido (rojo, como en el CFD). */
+.gantt-project-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 29;
+  width: 0;
+  border-left: 2px dashed;
+  pointer-events: none;
+}
+.gantt-project-line-start { border-color: rgba(96, 165, 250, 0.75); }
+.gantt-project-line-end { border-color: var(--critical); }
+
+.gantt-project-pill {
+  position: absolute;
+  top: 0.15rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  color: #0f172a;
+  font-size: 10px;
+  font-weight: 700;
+}
+.gantt-project-pill-start { background: #93c5fd; }
+.gantt-project-pill-end { background: #f3a3b3; }
 
 .gantt-today-pill {
   position: absolute;

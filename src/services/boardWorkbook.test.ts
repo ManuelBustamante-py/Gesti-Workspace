@@ -61,6 +61,44 @@ describe('parseImportedRows', () => {
     expect(warnings).toHaveLength(2)
   })
 
+  it('conserva el estado de la columna y las fechas reales del flujo', () => {
+    const { board, warnings } = parseImportedRows(
+      [
+        { ...row(1, 'QA final', 'A'), 'Estado columna': 'Completado', 'Fecha completada': '2026-09-14' },
+        { ...row(2, 'QA final', 'B'), 'Fecha completada': new Date(2026, 8, 20) },
+        { ...row(3, 'En Revisión', 'C'), 'Estado columna': 'En progreso', 'En columna desde': '01-10-2026' },
+      ],
+      'f.xlsx',
+    )
+    expect(warnings).toEqual([])
+    // «QA final» no se reconocería por el nombre: manda el estado declarado.
+    expect(board.columns.map((column) => column.status)).toEqual(['done', 'in_progress'])
+    expect(board.columns[0].tasks.map((task) => task.completedAt)).toEqual(['2026-09-14', '2026-09-20'])
+    expect(board.columns[1].tasks[0].columnEnteredAt).toBe('2026-10-01')
+  })
+
+  it('deduce el estado por el nombre en archivos sin «Estado columna»', () => {
+    const { board } = parseImportedRows([row(1, 'Completado', 'A'), row(2, 'Por hacer', 'B')], 'f.xlsx')
+    expect(board.columns.map((column) => column.status)).toEqual(['done', 'todo'])
+    expect(board.columns[0].tasks[0].completedAt).toBeNull()
+  })
+
+  it('descarta fechas reales en el tipo de columna equivocado o futuras, y lo avisa', () => {
+    const { board, warnings } = parseImportedRows(
+      [
+        { ...row(1, 'Por hacer', 'A'), 'Fecha completada': '2026-09-14' },
+        { ...row(2, 'Completado', 'B'), 'En columna desde': '2026-09-14' },
+        { ...row(3, 'Completado', 'C'), 'Fecha completada': '2999-01-01' },
+        { ...row(4, 'Rara', 'D'), 'Estado columna': 'Quizás' },
+      ],
+      'f.xlsx',
+    )
+    expect(board.columns[0].tasks[0].completedAt).toBeNull()
+    expect(board.columns[1].tasks.map((task) => [task.columnEnteredAt, task.completedAt])).toEqual([[null, null], [null, null]])
+    expect(board.columns[2].status).toBe('todo')
+    expect(warnings).toHaveLength(4)
+  })
+
   it('rechaza ciclos, números repetidos y fechas invertidas antes de crear nada', () => {
     expect(() => parseImportedRows([row(1, 'A', 'X', '2'), row(2, 'A', 'Y', '1')], 'f.xlsx')).toThrow('ciclo')
     expect(() => parseImportedRows([row(1, 'A', 'X'), row(1, 'A', 'Y')], 'f.xlsx')).toThrow('repetido')

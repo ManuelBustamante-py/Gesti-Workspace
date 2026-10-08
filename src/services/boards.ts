@@ -24,6 +24,15 @@ export interface Board {
   working_days: number[] | null
   work_start_time: string | null
   work_end_time: string | null
+  /** Inicio del proyecto (migración 20261009090000); null = el de las tareas. */
+  start_date?: string | null
+  /** Fin comprometido; null = la fecha de fin más tardía de las tareas. */
+  end_date?: string | null
+}
+
+/** Fin contra el que se mide el proyecto: el comprometido o, si no hay, el del Gantt. */
+export function projectDeadline(board: Pick<Board, 'end_date'>, tasksLatestEnd: string | null) {
+  return board.end_date ?? tasksLatestEnd
 }
 
 function firstRowOrThrow(data: unknown[] | null) {
@@ -145,6 +154,33 @@ export async function updateBoardSchedule(
   }
 
   return firstRowOrThrow(data)
+}
+
+/**
+ * Guarda inicio y fin del proyecto y, en la misma transacción, las fechas de
+ * las tareas reprogramadas (ver domain/projectDates).
+ */
+export async function rescheduleBoard(
+  id: string,
+  dates: { start: string | null; end: string | null },
+  taskDates: Array<{ id: string; start_date: string | null; end_date: string | null }>,
+) {
+  if (dates.start && dates.end && dates.start > dates.end) {
+    throw new Error('El inicio del proyecto no puede ser posterior al fin.')
+  }
+  const { data, error } = await supabase.rpc('reschedule_board', {
+    target_board_id: id,
+    new_start: dates.start,
+    new_end: dates.end,
+    task_dates: taskDates,
+  })
+  if (error) {
+    if (/reschedule_board/.test(error.message)) {
+      throw new Error('Para usar las fechas del proyecto aplica la migración 20261009090000_board_project_dates.sql en Supabase.')
+    }
+    throw error
+  }
+  return firstRowOrThrow(data as unknown[] | null)
 }
 
 export async function deleteBoard(id: string) {

@@ -15,7 +15,7 @@ import BoardScheduleForm from '../components/dashboard/BoardScheduleForm'
 import BoardStats from '../components/dashboard/BoardStats'
 import CollaboratorsModal from '../components/dashboard/CollaboratorsModal'
 import BoardSummaryMini from '../components/dashboard/BoardSummaryMini'
-import EditBoardModal from '../components/dashboard/EditBoardModal'
+import EditBoardModal, { type EditBoardValues } from '../components/dashboard/EditBoardModal'
 import MessagesPanel from '../components/dashboard/MessagesPanel'
 import ToastStack from '../components/ui/ToastStack'
 import SecurityInfoDialog from '../components/dashboard/SecurityInfoDialog'
@@ -33,6 +33,8 @@ import {
   createBoard,
   deleteBoard,
   getBoards,
+  projectDeadline,
+  rescheduleBoard,
   type Board,
   type BoardSchedule,
   updateBoard,
@@ -447,10 +449,29 @@ function Dashboard() {
     }
   }
 
-  async function handleUpdateBoard(values: { name: string; description: string; color: string }) {
+  // El modal la usa para calcular el impacto de cambiar las fechas del proyecto.
+  const loadEditingBoardContent = useCallback(
+    () =>
+      editingBoard && editingBoard.id === selectedBoardId
+        ? Promise.resolve({ columns, tasksByColumn })
+        : getBoardSnapshot(editingBoard?.id ?? ''),
+    [columns, editingBoard, selectedBoardId, tasksByColumn],
+  )
+
+  async function handleUpdateBoard(values: EditBoardValues) {
     if (!editingBoard) return null
     try {
-      const updated = await updateBoard(editingBoard.id, values.name, values.description, values.color)
+      let updated = await updateBoard(editingBoard.id, values.name, values.description, values.color)
+      const datesChanged = values.start !== (editingBoard.start_date ?? null) || values.end !== (editingBoard.end_date ?? null)
+      if (datesChanged || values.taskDates.length > 0) {
+        updated = await rescheduleBoard(editingBoard.id, { start: values.start, end: values.end }, values.taskDates)
+        if (values.taskDates.length > 0) {
+          setNotice(`Fechas del proyecto guardadas. ${values.taskDates.length} tarea(s) reprogramada(s).`)
+          if (editingBoard.id === selectedBoardId) void boardData.reload()
+        } else {
+          setNotice('Fechas del proyecto guardadas.')
+        }
+      }
       setBoards((current) => current.map((board) => (board.id === updated.id ? updated : board)))
       setEditingBoard(null)
       return null
@@ -1055,7 +1076,10 @@ function Dashboard() {
                           <p className="mt-2 line-clamp-3 min-h-10 text-sm text-slate-400">{board.description || 'Sin descripción.'}</p>
                           {summariesSupported && (
                             <BoardSummaryMini
-                              summary={boardSummaries[board.id]}
+                              summary={boardSummaries[board.id] && {
+                                ...boardSummaries[board.id],
+                                plannedEnd: projectDeadline(board, boardSummaries[board.id].plannedEnd),
+                              }}
                               onOpenHighlight={(mode) => openBoard(board.id, undefined, mode)}
                             />
                           )}
@@ -1335,7 +1359,9 @@ function Dashboard() {
         />
       )}
 
-      {editingBoard && <EditBoardModal board={editingBoard} onSave={handleUpdateBoard} onClose={() => setEditingBoard(null)} />}
+      {editingBoard && (
+        <EditBoardModal board={editingBoard} loadContent={loadEditingBoardContent} onSave={handleUpdateBoard} onClose={() => setEditingBoard(null)} />
+      )}
       {securityOpen && <SecurityInfoDialog onClose={() => setSecurityOpen(false)} />}
       {messagesOpen && selectedBoard && (
         <MessagesPanel

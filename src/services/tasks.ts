@@ -32,6 +32,9 @@ export type TaskInput = {
   predecessorIds?: string[]
   /** Solo al crear: número de actividad explícito (importación). */
   number?: number
+  /** Solo al crear (importación): «Completada el» y «En esta columna desde». */
+  completedAt?: string | null
+  columnEnteredAt?: string | null
 }
 
 export const NO_PERMISSION_MESSAGE =
@@ -111,6 +114,9 @@ export async function createTasks(columnId: string, inputs: TaskInput[]) {
           column_id: columnId,
           position: firstPosition + index,
           ...(withNumbers && inputs[index].number ? { number: inputs[index].number } : {}),
+          // Solo si vienen: así una base sin esas columnas sigue aceptando la inserción.
+          ...(inputs[index].completedAt ? { completed_at: inputs[index].completedAt } : {}),
+          ...(inputs[index].columnEnteredAt ? { column_entered_at: inputs[index].columnEnteredAt } : {}),
         })),
       )
       .select()

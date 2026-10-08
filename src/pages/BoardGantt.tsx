@@ -142,14 +142,19 @@ function BoardGantt() {
   const relations = useMemo(() => relationsFor(rows.map(({ task }) => task), selectedId), [rows, selectedId])
   const toggleSelected = (taskId: string) => setSelectedId((current) => (current === taskId ? null : taskId))
 
+  const projectStart = board?.start_date ?? null
+  const projectEnd = board?.end_date ?? null
   const timeline = useMemo(() => {
     if (rows.length === 0) return null
-    const start = startOfWeek(rows.reduce((min, { task }) => (task.start_date! < min ? task.start_date! : min), rows[0].task.start_date!))
-    const end = rows.reduce((max, { task }) => (task.end_date! > max ? task.end_date! : max), rows[0].task.end_date!)
+    // El rango incluye las fechas del proyecto para que sus marcas siempre se vean.
+    const starts = [...rows.map(({ task }) => task.start_date!), ...(projectStart ? [projectStart] : [])]
+    const ends = [...rows.map(({ task }) => task.end_date!), ...(projectEnd ? [projectEnd] : [])]
+    const start = startOfWeek(starts.reduce((min, day) => (day < min ? day : min)))
+    const end = ends.reduce((max, day) => (day > max ? day : max))
     const weekCount = Math.floor(diffDays(start, end) / 7) + 1
     const days = Array.from({ length: weekCount * 7 }, (_, index) => addDays(start, index))
     return { start, days, weeks: Array.from({ length: weekCount }, (_, index) => addDays(start, index * 7)) }
-  }, [rows])
+  }, [projectEnd, projectStart, rows])
 
   function changeZoom(next: Zoom) {
     setZoom(next)
@@ -322,6 +327,12 @@ function BoardGantt() {
                     {todayVisible && !showDays && (
                       <span className="gantt-today-pill" style={{ left: x(today) + dayWidth / 2 }}>Hoy</span>
                     )}
+                    {board.start_date && (
+                      <span className="gantt-project-pill gantt-project-pill-start" style={{ left: x(board.start_date) }} title={`Inicio del proyecto · ${formatDateKey(board.start_date)}`}>Inicio</span>
+                    )}
+                    {board.end_date && (
+                      <span className="gantt-project-pill gantt-project-pill-end" style={{ left: x(addDays(board.end_date, 1)) }} title={`Fin comprometido · ${formatDateKey(board.end_date)}`}>Fin</span>
+                    )}
                   </div>
                 </div>
 
@@ -371,6 +382,13 @@ function BoardGantt() {
 
                   {todayVisible && (
                     <div className="pointer-events-none absolute inset-y-0 z-30 w-0.5 bg-lime-300/80" style={{ left: labelWidth + x(today) + dayWidth / 2 }} />
+                  )}
+                  {/* Fechas del proyecto: inicio (borde izquierdo del día) y fin comprometido (borde derecho). */}
+                  {board.start_date && (
+                    <div className="gantt-project-line gantt-project-line-start" style={{ left: labelWidth + x(board.start_date) }} />
+                  )}
+                  {board.end_date && (
+                    <div className="gantt-project-line gantt-project-line-end" style={{ left: labelWidth + x(addDays(board.end_date, 1)) }} />
                   )}
 
                   {rows.map(({ task, column }) => {

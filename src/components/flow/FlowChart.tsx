@@ -27,6 +27,8 @@ interface FlowChartProps {
   forecast: FlowForecast
   width: number
   narrow: boolean
+  /** Nombre del plazo en el gráfico («Fin comprometido» o «Fin Gantt»). */
+  deadlineLabel?: string
 }
 
 type HoverInfo = { day: string; point: FlowPoint | null; projectedDone: number | null }
@@ -43,7 +45,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  * Se puede acercar en el tiempo (arrastrando, con Ctrl + rueda o con los
  * botones); con zoom, el eje Y se ajusta a lo visible para ver el detalle.
  */
-function FlowChart({ points, forecast, width, narrow }: FlowChartProps) {
+function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt' }: FlowChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   // null = todo el eje. Se guarda en días, así que sobrevive a cambios de ancho.
   const [rawView, setRawView] = useState<ChartView | null>(null)
@@ -402,7 +404,7 @@ function FlowChart({ points, forecast, width, narrow }: FlowChartProps) {
 
           {deadline && deadline >= start && deadline <= end && inView(deadline) && (
             <text x={x(deadline) - 4} y={pad.top + 12} className="flow-annotation flow-annotation-deadline" textAnchor="end">
-              Fin Gantt · {shortDate(deadline)}
+              {deadlineLabel} · {shortDate(deadline)}
             </text>
           )}
 

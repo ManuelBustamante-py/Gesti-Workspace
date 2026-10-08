@@ -1,4 +1,3 @@
-import { inferColumnStatus } from '../domain/columnStatus'
 import { createBoard, deleteBoard, type Board } from './boards'
 import { createBoardColumn } from './columns'
 import { createTasks, updateTaskPredecessors, type Task } from './tasks'
@@ -21,7 +20,9 @@ export async function createBoardFromImport(importedBoard: ImportedBoard, ownerI
   try {
     const tasksByNumber = new Map<number, Task>()
     for (const importedColumn of importedBoard.columns) {
-      const column = await createBoardColumn(board.id, importedColumn.name, inferColumnStatus(importedColumn.name))
+      // El estado debe existir antes que las tareas: la base de datos solo
+      // guarda «Completada el» en columnas Completado.
+      const column = await createBoardColumn(board.id, importedColumn.name, importedColumn.status)
       const created = await createTasks(
         column.id,
         importedColumn.tasks.map((task) => ({
@@ -31,6 +32,8 @@ export async function createBoardFromImport(importedBoard: ImportedBoard, ownerI
           startDate: task.startDate,
           endDate: task.endDate,
           number: task.activityNumber,
+          completedAt: task.completedAt,
+          columnEnteredAt: task.columnEnteredAt,
         })),
       )
       importedColumn.tasks.forEach((task, index) => tasksByNumber.set(task.activityNumber, created[index]))
