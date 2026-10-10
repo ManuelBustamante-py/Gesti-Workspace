@@ -11,6 +11,7 @@ describe('diagramError', () => {
 
   it('detecta diagramas que el motor no soporta y deja pasar los válidos', () => {
     expect(diagramError('<svg><text>Diagram not supported by this release of PlantUML</text></svg>')?.message).toMatch('no soportado')
+    expect(diagramError('<svg><text>@startuml</text><text>Empty description (Assumed diagram type: sequence)</text></svg>')?.message).toMatch('vacío')
     expect(diagramError('<svg><text>Usuario</text></svg>')).toBeNull()
   })
 })

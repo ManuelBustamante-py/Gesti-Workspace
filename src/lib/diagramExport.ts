@@ -40,3 +40,39 @@ export async function downloadPng(svg: string, fileName: string, scale = 2) {
   if (!blob) throw new Error('No se pudo generar la imagen PNG.')
   downloadBlob(blob, fileName)
 }
+
+/**
+ * SVG del lienzo del editor visual, listo para exportar: sin grilla, selección
+ * ni zonas de clic (marcadas con data-ui) y encuadrado en `bounds` (coordenadas
+ * del diagrama). Sin `bounds` se usa el viewBox propio del lienzo.
+ */
+export function canvasToSvg(svg: SVGSVGElement, bounds: { x: number; y: number; width: number; height: number } | null) {
+  const clone = svg.cloneNode(true) as SVGSVGElement
+  clone.querySelectorAll('[data-ui]').forEach((element) => element.remove())
+  clone.removeAttribute('class')
+  clone.removeAttribute('style')
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+
+  let box = bounds
+  if (box) {
+    clone.querySelector('[data-viewport]')?.removeAttribute('transform')
+  } else {
+    const [x, y, width, height] = (clone.getAttribute('viewBox') ?? '0 0 800 600').split(/\s+/).map(Number)
+    box = { x, y, width, height }
+  }
+  clone.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`)
+  clone.setAttribute('width', String(Math.ceil(box.width)))
+  clone.setAttribute('height', String(Math.ceil(box.height)))
+
+  // Fondo blanco explícito: el lienzo no siempre lo trae dentro del SVG.
+  const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  background.setAttribute('x', String(box.x))
+  background.setAttribute('y', String(box.y))
+  background.setAttribute('width', String(box.width))
+  background.setAttribute('height', String(box.height))
+  background.setAttribute('fill', '#ffffff')
+  const defs = clone.querySelector('defs')
+  clone.insertBefore(background, defs ? defs.nextSibling : clone.firstChild)
+
+  return new XMLSerializer().serializeToString(clone)
+}

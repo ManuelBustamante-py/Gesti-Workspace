@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react'
 
 import Modal from '../ui/Modal'
 import { blankTemplate, UML_CATEGORIES, UML_DIAGRAM_TYPES, umlDiagramType, type UmlSupport } from '../../domain/umlCatalog'
+import { generatePlantUml } from '../../domain/uml/generatePlantUml'
+import { initialModel, isVisualKind } from '../../domain/uml/visualModel'
 import type { DiagramMode } from '../../services/diagrams'
 
-export type NewDiagramValues = { name: string; kind: string; mode: DiagramMode; source: string }
+export type NewDiagramValues = { name: string; kind: string; mode: DiagramMode; source: string; model?: unknown }
 
 interface NewDiagramModalProps {
   onCreate: (values: NewDiagramValues) => Promise<string | null>
@@ -22,6 +24,8 @@ function NewDiagramModal({ onCreate, onClose }: NewDiagramModalProps) {
   const [kind, setKind] = useState('class')
   const [name, setName] = useState('')
   const [withTemplate, setWithTemplate] = useState(true)
+  // Los tipos con editor visual empiezan en modo visual; se puede elegir código.
+  const [preferVisual, setPreferVisual] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const selected = umlDiagramType(kind)
@@ -30,11 +34,14 @@ function NewDiagramModal({ onCreate, onClose }: NewDiagramModalProps) {
     event.preventDefault()
     if (!selected || selected.support === 'unavailable') return
     setSaving(true)
+    const visual = preferVisual && isVisualKind(selected.id)
+    const model = visual && isVisualKind(selected.id) ? initialModel(selected.id, withTemplate) : undefined
     const saveError = await onCreate({
       name: name.trim() || selected.name,
       kind: selected.id,
-      mode: 'code',
-      source: withTemplate ? selected.template : blankTemplate(selected),
+      mode: visual ? 'visual' : 'code',
+      source: model ? generatePlantUml(model) : withTemplate ? selected.template : blankTemplate(selected),
+      model,
     })
     setSaving(false)
     if (saveError) setError(saveError)
@@ -80,7 +87,7 @@ function NewDiagramModal({ onCreate, onClose }: NewDiagramModalProps) {
                   <span className="uml-type-english">{type.english}</span>
                   <span className="uml-type-badges">
                     <span className={`uml-badge uml-badge-${type.support}`}>{supportLabels[type.support]}</span>
-                    {type.visual && <span className="uml-badge uml-badge-visual">Visual pronto</span>}
+                    {type.visual && <span className="uml-badge uml-badge-visual">✥ Visual</span>}
                   </span>
                 </button>
               ))}
@@ -107,13 +114,28 @@ function NewDiagramModal({ onCreate, onClose }: NewDiagramModalProps) {
               </label>
               <div className="field-label">
                 Modo de edición
-                <div className="mt-1 flex flex-wrap gap-2">
-                  <span className="uml-mode uml-mode-active">⌨ Código (PlantUML)</span>
+                <div className="mt-1 flex flex-wrap gap-2" role="radiogroup" aria-label="Modo de edición">
                   {selected.visual && (
-                    <span className="uml-mode" title="El editor de arrastrar y soltar llega en la próxima fase">
-                      ✥ Visual · próximamente
-                    </span>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={preferVisual}
+                      onClick={() => setPreferVisual(true)}
+                      className={`uml-mode ${preferVisual ? 'uml-mode-active' : ''}`}
+                      title="Arrastrar y soltar; el PlantUML se genera solo"
+                    >
+                      ✥ Visual (arrastrar y soltar)
+                    </button>
                   )}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!selected.visual || !preferVisual}
+                    onClick={() => setPreferVisual(false)}
+                    className={`uml-mode ${!selected.visual || !preferVisual ? 'uml-mode-active' : ''}`}
+                  >
+                    ⌨ Código (PlantUML)
+                  </button>
                 </div>
               </div>
             </div>

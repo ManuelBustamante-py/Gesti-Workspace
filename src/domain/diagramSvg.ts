@@ -18,6 +18,9 @@ export function diagramError(svg: string): { line: number | null; message: strin
     const line = /\(line (\d+)\)/.exec(text)
     return { line: line ? Number(line[1]) : null, message: 'Error de sintaxis' }
   }
+  if (/Empty description/.test(text)) {
+    return { line: null, message: 'El diagrama está vacío: agrega elementos para verlo' }
+  }
   if (/Diagram not supported by this release|is not recognized/.test(text)) {
     return { line: 1, message: 'Tipo de diagrama no soportado por el motor' }
   }

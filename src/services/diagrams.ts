@@ -48,12 +48,15 @@ export async function getDiagram(id: string) {
   return data as Diagram | null
 }
 
-export async function createDiagram(boardId: string, values: { name: string; kind: string; mode: DiagramMode; source: string }) {
+export async function createDiagram(
+  boardId: string,
+  values: { name: string; kind: string; mode: DiagramMode; source: string; model?: unknown },
+) {
   const name = values.name.trim()
   if (!name) throw new Error('El diagrama debe tener un nombre.')
   const { data, error } = await supabase
     .from('board_diagrams')
-    .insert({ board_id: boardId, name, kind: values.kind, mode: values.mode, source: values.source })
+    .insert({ board_id: boardId, name, kind: values.kind, mode: values.mode, source: values.source, model: values.model ?? null })
     .select()
   if (error) throw translateError(error)
   if (!data || data.length === 0) throw new Error(NO_PERMISSION_MESSAGE)
@@ -66,16 +69,18 @@ export async function createDiagram(boardId: string, values: { name: string; kin
  */
 export async function updateDiagram(
   id: string,
-  values: { name?: string; source?: string },
+  values: { name?: string; source?: string; model?: unknown; mode?: DiagramMode },
   expectedUpdatedAt: string,
 ) {
-  const patch: Record<string, string> = {}
+  const patch: Record<string, unknown> = {}
   if (values.name !== undefined) {
     const name = values.name.trim()
     if (!name) throw new Error('El diagrama debe tener un nombre.')
     patch.name = name
   }
   if (values.source !== undefined) patch.source = values.source
+  if (values.model !== undefined) patch.model = values.model
+  if (values.mode !== undefined) patch.mode = values.mode
 
   const { data, error } = await supabase
     .from('board_diagrams')

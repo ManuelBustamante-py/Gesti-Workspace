@@ -2135,3 +2135,149 @@ a:focus-visible {
 @media (max-width: 767px) {
   .uml-code, .uml-preview { height: 65dvh; }
 }
+
+/* ---- Editor visual UML ---- */
+.uml-visual-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}
+.uml-visual {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(0, 1fr) 17rem;
+  gap: 0.75rem;
+  height: calc(100dvh - 15.5rem);
+  min-height: 30rem;
+}
+.uml-visual-narrow {
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
+}
+.uml-visual-narrow .uml-visual-canvas { height: 62dvh; }
+.uml-visual-canvas { position: relative; min-width: 0; min-height: 0; }
+
+.uml-palette {
+  overflow-y: auto;
+  border: 1px solid rgba(166, 180, 184, 0.12);
+  border-radius: 0.75rem;
+  background: rgba(17, 21, 23, 0.6);
+  padding: 0.6rem;
+}
+.uml-palette-title {
+  margin: 0.4rem 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.uml-palette-title:first-child { margin-top: 0; }
+.uml-palette-items { display: grid; gap: 0.3rem; }
+.uml-visual-narrow .uml-palette-items { display: flex; flex-wrap: wrap; }
+.uml-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(166, 180, 184, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(166, 180, 184, 0.05);
+  padding: 0.35rem 0.55rem;
+  color: var(--text-main);
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: grab;
+}
+.uml-palette-item[role='radio'] { cursor: pointer; }
+.uml-palette-item:hover:not(:disabled) { border-color: rgba(166, 180, 184, 0.4); }
+.uml-palette-item:disabled { cursor: not-allowed; opacity: 0.5; }
+.uml-palette-item > span[aria-hidden] { width: 1.1rem; color: var(--accent-ui); text-align: center; }
+.uml-palette-item-active { border-color: var(--accent-mint); background: rgba(166, 180, 184, 0.16); }
+
+/* Lienzo: papel claro como el de PlantUML, así lo exportado se ve igual. */
+.uml-canvas {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(166, 180, 184, 0.16);
+  border-radius: 0.75rem;
+  background: #ffffff;
+  outline: none;
+  touch-action: none;
+}
+.uml-canvas:focus-visible { box-shadow: 0 0 0 2px var(--accent-mint); }
+.uml-canvas-scroll { overflow: auto; }
+.uml-canvas-svg { display: block; width: 100%; height: 100%; cursor: default; user-select: none; }
+.uml-canvas .uml-node { cursor: move; }
+.uml-canvas .uml-edge { cursor: pointer; }
+.uml-canvas .uml-handle { cursor: crosshair; }
+.uml-canvas .uml-handle-resize { cursor: nwse-resize; }
+.uml-canvas .uml-lifeline { cursor: crosshair; }
+.uml-canvas-zoom {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.6rem;
+  background: rgba(17, 21, 23, 0.85);
+  padding: 0.3rem;
+}
+.uml-canvas-zoom-value { min-width: 2.8rem; color: var(--text-main); font-size: 0.75rem; text-align: center; }
+.uml-canvas-empty {
+  position: absolute;
+  inset: 40% 1rem auto;
+  color: #6b777b;
+  font-size: 0.9rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.uml-props {
+  overflow-y: auto;
+  border: 1px solid rgba(166, 180, 184, 0.12);
+  border-radius: 0.75rem;
+  background: rgba(17, 21, 23, 0.6);
+  padding: 0.75rem;
+}
+.uml-props-title { margin-bottom: 0.6rem; color: #fff; font-size: 0.9rem; font-weight: 600; }
+.uml-props-hint { margin: 0.2rem 0 0.5rem; color: var(--text-muted); font-size: 0.72rem; }
+.uml-props-help { margin-top: 0.75rem; padding-left: 1rem; color: var(--text-muted); font-size: 0.74rem; list-style: disc; }
+.uml-props-help li + li { margin-top: 0.3rem; }
+.uml-field { display: block; margin-bottom: 0.6rem; }
+.uml-field > span { display: block; margin-bottom: 0.2rem; color: var(--text-muted); font-size: 0.72rem; }
+.uml-field-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.78rem; white-space: pre; }
+
+.uml-generated {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(166, 180, 184, 0.14);
+  border-radius: 0.75rem;
+  background: #111517;
+}
+.uml-generated-code {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  color: #e8ecec;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.uml-generated-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(166, 180, 184, 0.1);
+  padding: 0.6rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+.uml-generated-actions p { flex: 1 1 16rem; }

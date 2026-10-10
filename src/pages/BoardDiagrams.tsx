@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIsNarrow } from '../hooks/useLayout'
 import DiagramEditor from '../components/uml/DiagramEditor'
+import VisualEditor from '../components/uml/visual/VisualEditor'
 import NewDiagramModal, { type NewDiagramValues } from '../components/uml/NewDiagramModal'
 import { boardPermissions, resolveBoardRole } from '../domain/roles'
 import { UML_CATEGORIES, umlDiagramType } from '../domain/umlCatalog'
@@ -146,18 +147,33 @@ function BoardDiagrams() {
         {diagramId ? (
           editing ? (
             <section className="glass-panel rounded-2xl p-3 sm:p-5">
-              <DiagramEditor
-                key={editing.id}
-                diagram={editing}
-                canEdit={canEditContent}
-                narrow={narrow}
-                onSaved={setCurrent}
-                onDeleted={() => {
-                  setCurrent(null)
-                  navigate(listPath)
-                }}
-                onBack={() => navigate(listPath)}
-              />
+              {editing.mode === 'visual' ? (
+                <VisualEditor
+                  key={`${editing.id}-visual`}
+                  diagram={editing}
+                  canEdit={canEditContent}
+                  narrow={narrow}
+                  onSaved={setCurrent}
+                  onDeleted={() => {
+                    setCurrent(null)
+                    navigate(listPath)
+                  }}
+                  onBack={() => navigate(listPath)}
+                />
+              ) : (
+                <DiagramEditor
+                  key={`${editing.id}-code`}
+                  diagram={editing}
+                  canEdit={canEditContent}
+                  narrow={narrow}
+                  onSaved={setCurrent}
+                  onDeleted={() => {
+                    setCurrent(null)
+                    navigate(listPath)
+                  }}
+                  onBack={() => navigate(listPath)}
+                />
+              )}
             </section>
           ) : currentError ? (
             <div>
