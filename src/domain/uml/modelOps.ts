@@ -1,20 +1,18 @@
-import { containerMap, nodeRect, nodeSize, snap, type Point } from './geometry'
+import { containerMap, distanceToSegment, edgeRoute, nodeRect, nodeSize, snap, type Point } from './geometry'
+import { kindSpec, nodeSpec } from './kinds'
 import {
-  NODE_LABELS,
   PARTICIPANT_LABELS,
   isContainer,
   nextId,
-  type EdgeType,
   type GraphEdge,
   type GraphModel,
   type GraphNode,
   type MessageType,
-  type NodeType,
   type ParticipantType,
   type SequenceModel,
 } from './visualModel'
 
-// --- Grafo (casos de uso y clases) -------------------------------------------
+// --- Grafo ----------------------------------------------------------------------------
 
 /** Nombre por defecto sin repetir: «Clase», «Clase 2»… */
 function defaultName(base: string, taken: string[]) {
@@ -28,27 +26,26 @@ const overlaps = (a: { x: number; y: number; width: number; height: number }, b:
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
 /**
- * Agrega un elemento centrado en `point` (coordenadas del lienzo). Con
- * `avoidOverlap` busca el hueco libre más cercano (agregar con clic en la
- * paleta); al soltarlo con el mouse se respeta el punto exacto.
+ * Agrega un elemento centrado en `point`. Con `avoidOverlap` busca el hueco
+ * libre más cercano (agregar con clic); al soltarlo con el mouse se respeta el punto.
  */
-export function addNode(model: GraphModel, type: NodeType, point: Point, avoidOverlap = false): { model: GraphModel; id: string } {
+export function addNode(model: GraphModel, type: string, point: Point, avoidOverlap = false): { model: GraphModel; id: string } {
+  const spec = nodeSpec(model.kind, type)
   const id = nextId('n', model.nodes.map((node) => node.id))
   const draft: GraphNode = {
     id,
     type,
-    name: defaultName(type === 'note' ? 'Nota' : NODE_LABELS[type], model.nodes.map((node) => node.name)),
+    name: spec.pseudo ? spec.defaultName : defaultName(spec.defaultName, model.nodes.map((node) => node.name)),
     x: 0,
     y: 0,
-    ...(isContainer(type) ? { width: type === 'boundary' ? 360 : 340, height: 260 } : {}),
-    ...(type === 'enum' ? { attributes: ['VALOR_1', 'VALOR_2'] } : {}),
-    ...(['class', 'abstract'].includes(type) ? { attributes: ['- atributo: Tipo'], methods: ['+ operacion(): void'] } : {}),
-    ...(type === 'interface' ? { methods: ['+ operacion(): void'] } : {}),
+    ...(spec.container ? { width: 360, height: 260 } : {}),
+    ...(spec.defaultMembers?.attributes ? { attributes: [...spec.defaultMembers.attributes] } : {}),
+    ...(spec.defaultMembers?.methods ? { methods: [...spec.defaultMembers.methods] } : {}),
   }
-  const size = nodeSize(draft)
+  const size = nodeSize(model.kind, draft)
   let node = { ...draft, x: snap(point.x - size.width / 2), y: snap(point.y - size.height / 2) }
-  if (avoidOverlap && !isContainer(type)) {
-    const others = model.nodes.filter((item) => !isContainer(item.type)).map(nodeRect)
+  if (avoidOverlap && !spec.container) {
+    const others = model.nodes.filter((item) => !isContainer(model.kind, item.type)).map((item) => nodeRect(model.kind, item))
     const margin = 20
     const free = (x: number, y: number) =>
       !others.some((rect) => overlaps({ x: x - margin, y: y - margin, width: size.width + margin * 2, height: size.height + margin * 2 }, rect))
@@ -66,13 +63,13 @@ export function addNode(model: GraphModel, type: NodeType, point: Point, avoidOv
     }
   }
   // Los contenedores van primero: se dibujan detrás del resto.
-  const nodes = isContainer(type) ? [node, ...model.nodes] : [...model.nodes, node]
+  const nodes = spec.container ? [node, ...model.nodes] : [...model.nodes, node]
   return { model: { ...model, nodes }, id }
 }
 
 /** Ids de lo que está dentro de un contenedor (a cualquier profundidad). */
 export function descendantsOf(model: GraphModel, id: string): string[] {
-  const parents = containerMap(model.nodes)
+  const parents = containerMap(model.kind, model.nodes)
   const result: string[] = []
   const visit = (parent: string) => {
     for (const node of model.nodes) {
@@ -86,15 +83,35 @@ export function descendantsOf(model: GraphModel, id: string): string[] {
   return result
 }
 
-/** Mueve elementos desde sus posiciones originales (arrastre), ajustando a la grilla. */
-export function moveNodes(model: GraphModel, origins: Map<string, Point>, dx: number, dy: number): GraphModel {
+/**
+ * Mueve elementos desde sus posiciones originales (arrastre), ajustando a la
+ * grilla. Los codos de las relaciones cuyos dos extremos se mueven, se mueven con ellos.
+ */
+export function moveNodes(model: GraphModel, origins: Map<string, Point>, dx: number, dy: number, bendOrigins?: Map<string, Point[]>): GraphModel {
+  const sdx = snap(dx)
+  const sdy = snap(dy)
   return {
     ...model,
     nodes: model.nodes.map((node) => {
       const origin = origins.get(node.id)
       return origin ? { ...node, x: snap(origin.x + dx), y: snap(origin.y + dy) } : node
     }),
+    edges: bendOrigins
+      ? model.edges.map((edge) => {
+        const points = bendOrigins.get(edge.id)
+        return points ? { ...edge, points: points.map((point) => ({ x: point.x + sdx, y: point.y + sdy })) } : edge
+      })
+      : model.edges,
   }
+}
+
+/** Codos de las relaciones internas a un grupo de elementos (para moverlos juntos). */
+export function bendsWithin(model: GraphModel, ids: Set<string>): Map<string, Point[]> {
+  return new Map(
+    model.edges
+      .filter((edge) => edge.points?.length && ids.has(edge.source) && ids.has(edge.target))
+      .map((edge) => [edge.id, edge.points!.map((point) => ({ ...point }))]),
+  )
 }
 
 export function updateNode(model: GraphModel, id: string, patch: Partial<GraphNode>): GraphModel {
@@ -112,16 +129,18 @@ export function deleteNode(model: GraphModel, id: string): GraphModel {
 
 /**
  * Conecta dos elementos. Con una nota siempre es un enlace de nota; los
- * contenedores no se conectan; no se duplica la misma relación.
+ * contenedores no se conectan; no se duplica la misma relación; inicio solo
+ * sale y fin solo recibe.
  */
-export function addEdge(model: GraphModel, type: EdgeType, source: string, target: string): { model: GraphModel; id: string | null } {
+export function addEdge(model: GraphModel, type: string, source: string, target: string): { model: GraphModel; id: string | null } {
   const from = model.nodes.find((node) => node.id === source)
   const to = model.nodes.find((node) => node.id === target)
-  if (!from || !to || isContainer(from.type) || isContainer(to.type)) return { model, id: null }
-  const resolved: EdgeType = from.type === 'note' || to.type === 'note' ? 'note-link' : type
-  if (resolved === 'note-link' && source === target) return { model, id: null }
-  // Solo las clases admiten relaciones consigo mismas (asociación recursiva).
-  if (source === target && model.kind !== 'class') return { model, id: null }
+  if (!from || !to || isContainer(model.kind, from.type) || isContainer(model.kind, to.type)) return { model, id: null }
+  if (nodeSpec(model.kind, from.type).pseudo === 'final' || nodeSpec(model.kind, to.type).pseudo === 'initial') return { model, id: null }
+  const resolved = from.type === 'note' || to.type === 'note' ? 'note-link' : type
+  // Relaciones consigo mismo: asociación recursiva (clases) o transición propia (estados).
+  const syntax = kindSpec(model.kind)?.syntax
+  if (source === target && (resolved === 'note-link' || syntax === 'description')) return { model, id: null }
   const duplicate = model.edges.some((edge) => edge.type === resolved && edge.source === source && edge.target === target)
   if (duplicate) return { model, id: null }
   const id = nextId('e', model.edges.map((edge) => edge.id))
@@ -137,7 +156,7 @@ export function reverseEdge(model: GraphModel, id: string): GraphModel {
     ...model,
     edges: model.edges.map((edge) =>
       edge.id === id
-        ? { ...edge, source: edge.target, target: edge.source, sourceLabel: edge.targetLabel, targetLabel: edge.sourceLabel }
+        ? { ...edge, source: edge.target, target: edge.source, sourceLabel: edge.targetLabel, targetLabel: edge.sourceLabel, points: edge.points ? [...edge.points].reverse() : undefined }
         : edge,
     ),
   }
@@ -147,7 +166,42 @@ export function deleteEdge(model: GraphModel, id: string): GraphModel {
   return { ...model, edges: model.edges.filter((edge) => edge.id !== id) }
 }
 
-// --- Secuencia -----------------------------------------------------------------
+/** Inserta un codo en el tramo de la relación más cercano a `point`. Devuelve su índice. */
+export function addBend(model: GraphModel, edgeId: string, point: Point): { model: GraphModel; index: number } {
+  const edge = model.edges.find((item) => item.id === edgeId)
+  const source = model.nodes.find((node) => node.id === edge?.source)
+  const target = model.nodes.find((node) => node.id === edge?.target)
+  if (!edge || !source || !target || source.id === target.id) return { model, index: -1 }
+  const route = edgeRoute(model.kind, edge, source, target)
+  let best = 0
+  let bestDistance = Infinity
+  for (let segment = 0; segment < route.length - 1; segment += 1) {
+    const distance = distanceToSegment(point, route[segment], route[segment + 1])
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = segment
+    }
+  }
+  const points = [...(edge.points ?? [])]
+  points.splice(best, 0, { x: snap(point.x), y: snap(point.y) })
+  return { model: updateEdge(model, edgeId, { points }), index: best }
+}
+
+export function moveBend(model: GraphModel, edgeId: string, index: number, point: Point): GraphModel {
+  const edge = model.edges.find((item) => item.id === edgeId)
+  if (!edge?.points?.[index]) return model
+  const points = edge.points.map((item, position) => (position === index ? { x: snap(point.x), y: snap(point.y) } : item))
+  return updateEdge(model, edgeId, { points })
+}
+
+export function removeBend(model: GraphModel, edgeId: string, index: number): GraphModel {
+  const edge = model.edges.find((item) => item.id === edgeId)
+  if (!edge?.points) return model
+  const points = edge.points.filter((_, position) => position !== index)
+  return updateEdge(model, edgeId, { points: points.length ? points : undefined })
+}
+
+// --- Secuencia ----------------------------------------------------------------------
 
 export function addParticipant(model: SequenceModel, type: ParticipantType, index = model.participants.length): { model: SequenceModel; id: string } {
   const id = nextId('p', model.participants.map((participant) => participant.id))
@@ -187,6 +241,14 @@ export function addMessage(
   const id = nextId('m', model.messages.map((message) => message.id))
   const messages = [...model.messages]
   messages.splice(Math.max(0, Math.min(index, messages.length)), 0, { id, from, to, type, label: type === 'reply' ? 'respuesta' : 'mensaje' })
+  return { model: { ...model, messages }, id }
+}
+
+/** Fila de PlantUML libre (alt, loop, nota, división…) en la posición indicada. */
+export function addRawRow(model: SequenceModel, text: string, index = model.messages.length): { model: SequenceModel; id: string } {
+  const id = nextId('m', model.messages.map((message) => message.id))
+  const messages = [...model.messages]
+  messages.splice(Math.max(0, Math.min(index, messages.length)), 0, { id, from: '', to: '', type: 'sync', label: '', raw: text })
   return { model: { ...model, messages }, id }
 }
 

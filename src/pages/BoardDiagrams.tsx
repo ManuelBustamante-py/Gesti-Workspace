@@ -4,7 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useIsNarrow } from '../hooks/useLayout'
 import DiagramEditor from '../components/uml/DiagramEditor'
+import StructuredEditor from '../components/uml/structured/StructuredEditor'
 import VisualEditor from '../components/uml/visual/VisualEditor'
+import { useDiagramLive } from '../hooks/useDiagramLive'
+import { isStructuredKind } from '../domain/uml/structured'
 import NewDiagramModal, { type NewDiagramValues } from '../components/uml/NewDiagramModal'
 import { boardPermissions, resolveBoardRole } from '../domain/roles'
 import { UML_CATEGORIES, umlDiagramType } from '../domain/umlCatalog'
@@ -12,6 +15,34 @@ import { preloadPlantUml } from '../lib/plantuml'
 import { getBoard, type Board } from '../services/boards'
 import { getBoardMembers, type BoardMember } from '../services/boardMembers'
 import { createDiagram, getDiagram, listDiagrams, type Diagram, type DiagramSummary } from '../services/diagrams'
+
+type WorkspaceProps = {
+  diagram: Diagram
+  canEdit: boolean
+  narrow: boolean
+  userId: string
+  userName: string
+  onSaved: (diagram: Diagram) => void
+  onDeleted: () => void
+  onBack: () => void
+}
+
+/**
+ * Diagrama abierto: se conecta al canal en vivo y elige el editor según el modo
+ * (código o visual) y el tipo (lienzo o editor estructurado).
+ */
+function DiagramWorkspace({ diagram, canEdit, narrow, userId, userName, onSaved, onDeleted, onBack }: WorkspaceProps) {
+  const live = useDiagramLive({ diagram, userId, userName, canEdit })
+  // Lo que otro colaborador guarda pasa a ser la versión base (sin falsos conflictos al guardar).
+  useEffect(() => {
+    if (live.remoteSaved && live.remoteSaved.id === diagram.id) onSaved(live.remoteSaved)
+  }, [diagram.id, live.remoteSaved, onSaved])
+
+  const common = { diagram, canEdit, narrow, onSaved, onDeleted, onBack, live }
+  if (diagram.mode !== 'visual') return <DiagramEditor key={`${diagram.id}-code`} {...common} />
+  if (isStructuredKind(diagram.kind)) return <StructuredEditor key={`${diagram.id}-structured`} {...common} />
+  return <VisualEditor key={`${diagram.id}-visual`} {...common} />
+}
 
 const editedAt = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const categoryIcons: Record<string, string> = { uml: '◇', architecture: '▤', process: '↻' }
@@ -92,6 +123,8 @@ function BoardDiagrams() {
     }
   }, [diagramId, user])
 
+  const metadata = user?.user_metadata as { full_name?: string; name?: string } | undefined
+  const displayName = metadata?.full_name || metadata?.name || user?.email?.split('@')[0] || 'Colaborador'
   const role = resolveBoardRole(board, user?.id, members)
   const { canEditContent } = boardPermissions(role)
   const listPath = `/dashboard/uml/${boardId}`
@@ -147,33 +180,20 @@ function BoardDiagrams() {
         {diagramId ? (
           editing ? (
             <section className="glass-panel rounded-2xl p-3 sm:p-5">
-              {editing.mode === 'visual' ? (
-                <VisualEditor
-                  key={`${editing.id}-visual`}
-                  diagram={editing}
-                  canEdit={canEditContent}
-                  narrow={narrow}
-                  onSaved={setCurrent}
-                  onDeleted={() => {
-                    setCurrent(null)
-                    navigate(listPath)
-                  }}
-                  onBack={() => navigate(listPath)}
-                />
-              ) : (
-                <DiagramEditor
-                  key={`${editing.id}-code`}
-                  diagram={editing}
-                  canEdit={canEditContent}
-                  narrow={narrow}
-                  onSaved={setCurrent}
-                  onDeleted={() => {
-                    setCurrent(null)
-                    navigate(listPath)
-                  }}
-                  onBack={() => navigate(listPath)}
-                />
-              )}
+              <DiagramWorkspace
+                key={editing.id}
+                diagram={editing}
+                canEdit={canEditContent}
+                narrow={narrow}
+                userId={user?.id ?? ''}
+                userName={displayName}
+                onSaved={setCurrent}
+                onDeleted={() => {
+                  setCurrent(null)
+                  navigate(listPath)
+                }}
+                onBack={() => navigate(listPath)}
+              />
             </section>
           ) : currentError ? (
             <div>

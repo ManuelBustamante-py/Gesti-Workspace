@@ -1,7 +1,8 @@
-import { isContainer, type GraphNode } from './visualModel'
+import { nodeSpec, type NodeSpec } from './kinds'
+import type { GraphEdge, GraphNode, Point } from './visualModel'
 
+export type { Point } from './visualModel'
 export type Rect = { x: number; y: number; width: number; height: number }
-export type Point = { x: number; y: number }
 
 export const NAME_FONT = 13
 export const MEMBER_FONT = 12
@@ -24,20 +25,13 @@ export function textWidth(text: string, size: number, bold = false) {
 const widest = (texts: string[], size: number, bold = false) => Math.max(0, ...texts.map((text) => textWidth(text, size, bold)))
 export const nameLines = (name: string) => (name || ' ').split('\n')
 
-/** Estereotipo que se muestra sobre el nombre («interface», «enumeration», o el del usuario). */
-export function stereotypeOf(node: GraphNode) {
-  if (node.stereotype?.trim()) return node.stereotype.trim()
-  if (node.type === 'interface') return 'interface'
-  if (node.type === 'enum') return 'enumeration'
-  if (node.type === 'abstract') return 'abstract'
-  return null
+/** Estereotipo visible: el del usuario o el propio del tipo («interface», «Contenedor»…). */
+export function stereotypeOf(node: GraphNode, spec: NodeSpec) {
+  return node.stereotype?.trim() || spec.badge || null
 }
 
-export const isClassLike = (node: GraphNode) => ['class', 'abstract', 'interface', 'enum'].includes(node.type)
-
-/** Alto de la cabecera de una clase (estereotipo + nombre). */
-export function classHeaderHeight(node: GraphNode) {
-  return (stereotypeOf(node) ? 16 : 0) + nameLines(node.name).length * 17 + 14
+export function classHeaderHeight(node: GraphNode, spec: NodeSpec) {
+  return (stereotypeOf(node, spec) ? 16 : 0) + nameLines(node.name).length * 17 + 14
 }
 
 /** Alto de un compartimento de atributos o métodos; vacío queda como franja delgada. */
@@ -46,35 +40,60 @@ export function compartmentHeight(lines: string[] | undefined) {
   return count > 0 ? count * MEMBER_LINE + 8 : 10
 }
 
-export function nodeSize(node: GraphNode): { width: number; height: number } {
+export function nodeSize(kind: string, node: GraphNode): { width: number; height: number } {
+  const spec = nodeSpec(kind, node.type)
   const lines = nameLines(node.name)
-  switch (node.type) {
+  const nameWidth = widest(lines, NAME_FONT)
+  const badge = stereotypeOf(node, spec)
+  const badgeWidth = badge ? textWidth(`«${badge}»`, 10.5) : 0
+  const textHeight = lines.length * 17 + (badge ? 15 : 0)
+
+  if (spec.container) return { width: node.width ?? 320, height: node.height ?? 220 }
+  switch (spec.shape) {
     case 'actor':
-      return { width: Math.max(64, widest(lines, NAME_FONT) + 12), height: 70 + lines.length * 17 }
-    case 'usecase':
-      return { width: Math.max(130, widest(lines, NAME_FONT) + 52), height: Math.max(52, lines.length * 17 + 30) }
-    case 'boundary':
-    case 'package':
-      return { width: node.width ?? 320, height: node.height ?? 220 }
+      return { width: Math.max(64, nameWidth + 12, badgeWidth + 12), height: 70 + textHeight }
+    case 'ellipse':
+      return { width: Math.max(130, nameWidth + 52, badgeWidth + 52), height: Math.max(52, textHeight + 30) }
     case 'note':
       return { width: Math.max(120, widest(lines, MEMBER_FONT) + 28), height: lines.length * MEMBER_LINE + 20 }
+    case 'initial':
+      return { width: 24, height: 24 }
+    case 'final':
+      return { width: 28, height: 28 }
+    case 'choice':
+      return { width: 36, height: 36 }
+    case 'bar':
+      return { width: 120, height: 10 }
+    case 'port':
+      return { width: 16, height: 16 }
+    case 'lollipop':
+      return { width: Math.max(60, nameWidth + 10), height: 50 }
+    case 'database':
+    case 'queue':
+    case 'storage':
+    case 'artifact':
+    case 'cloud':
+    case 'node3d':
+    case 'component':
+    case 'archimate':
+    case 'rect':
+    case 'round':
+      return { width: Math.max(spec.shape === 'round' ? 110 : 130, nameWidth + 40, badgeWidth + 32), height: Math.max(spec.shape === 'database' ? 70 : 50, textHeight + (spec.shape === 'database' ? 40 : 24)) }
     default: {
-      const stereotype = stereotypeOf(node)
-      const members = [...(node.attributes ?? []), ...(node.type === 'enum' ? [] : node.methods ?? [])]
-      const width = Math.max(
-        150,
-        widest(lines, NAME_FONT, true) + 32,
-        stereotype ? textWidth(`«${stereotype}»`, 11) + 32 : 0,
-        widest(members, MEMBER_FONT) + 24,
-      )
-      const height = classHeaderHeight(node) + compartmentHeight(node.attributes) + (node.type === 'enum' ? 0 : compartmentHeight(node.methods))
-      return { width: Math.ceil(width), height }
+      // Cajas con compartimentos: clases, entidades, objetos, requisitos…
+      const members = [...(node.attributes ?? []), ...(spec.members === 'class' ? node.methods ?? [] : [])]
+      const width = Math.max(150, widest(lines, NAME_FONT, true) + 32, badgeWidth + 32, widest(members, MEMBER_FONT) + 24)
+      const height =
+        classHeaderHeight(node, spec) +
+        (spec.members ? compartmentHeight(node.attributes) : 0) +
+        (spec.members === 'class' ? compartmentHeight(node.methods) : 0)
+      return { width: Math.ceil(width), height: spec.members ? height : Math.max(height, 40) }
     }
   }
 }
 
-export function nodeRect(node: GraphNode): Rect {
-  return { x: node.x, y: node.y, ...nodeSize(node) }
+export function nodeRect(kind: string, node: GraphNode): Rect {
+  return { x: node.x, y: node.y, ...nodeSize(kind, node) }
 }
 
 export const center = (rect: Rect): Point => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
@@ -84,22 +103,22 @@ const contains = (outer: Rect, point: Point) =>
 
 /**
  * Contenedor directo de cada elemento: el contenedor más pequeño que encierra
- * su centro. Así, arrastrar un caso de uso dentro del límite del sistema (o una
- * clase dentro de un paquete) lo agrupa, igual que en PlantUML.
+ * su centro. Arrastrar un elemento dentro de un contenedor lo agrupa.
  */
-export function containerMap(nodes: GraphNode[]): Map<string, string | null> {
-  const containers = nodes.filter((node) => isContainer(node.type)).map((node) => ({ node, rect: nodeRect(node) }))
+export function containerMap(kind: string, nodes: GraphNode[]): Map<string, string | null> {
+  const containers = nodes.filter((node) => nodeSpec(kind, node.type).container).map((node) => ({ node, rect: nodeRect(kind, node) }))
   const result = new Map<string, string | null>()
   for (const node of nodes) {
-    const rect = nodeRect(node)
+    const rect = nodeRect(kind, node)
     const point = center(rect)
     const area = rect.width * rect.height
+    const isContainer = Boolean(nodeSpec(kind, node.type).container)
     let best: { id: string; area: number } | null = null
     for (const container of containers) {
       if (container.node.id === node.id) continue
       const containerArea = container.rect.width * container.rect.height
       // Un contenedor solo puede estar dentro de otro más grande (evita ciclos).
-      if (isContainer(node.type) && containerArea <= area) continue
+      if (isContainer && containerArea <= area) continue
       if (contains(container.rect, point) && (!best || containerArea < best.area)) best = { id: container.node.id, area: containerArea }
     }
     result.set(node.id, best?.id ?? null)
@@ -107,17 +126,23 @@ export function containerMap(nodes: GraphNode[]): Map<string, string | null> {
   return result
 }
 
-/** Punto del borde de un elemento en dirección a `toward` (elipse para casos de uso). */
-export function anchorPoint(node: GraphNode, toward: Point): Point {
-  const rect = nodeRect(node)
+/** Punto del borde de un elemento en dirección a `toward` (elipse, rombo o rectángulo). */
+export function anchorPoint(kind: string, node: GraphNode, toward: Point): Point {
+  const rect = nodeRect(kind, node)
   const c = center(rect)
   const dx = toward.x - c.x
   const dy = toward.y - c.y
   if (dx === 0 && dy === 0) return c
-  if (node.type === 'usecase') {
-    const rx = rect.width / 2
-    const ry = rect.height / 2
-    const t = 1 / Math.sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry))
+  const shape = nodeSpec(kind, node.type).shape
+  if (shape === 'ellipse' || shape === 'initial' || shape === 'final' || shape === 'lollipop') {
+    const rx = shape === 'lollipop' ? 10 : rect.width / 2
+    const ry = shape === 'lollipop' ? 10 : rect.height / 2
+    const cy = shape === 'lollipop' ? rect.y + 12 : c.y
+    const t = 1 / Math.sqrt((dx * dx) / (rx * rx) + ((toward.y - cy) ** 2) / (ry * ry))
+    return { x: c.x + dx * t, y: cy + (toward.y - cy) * t }
+  }
+  if (shape === 'choice') {
+    const t = 1 / (Math.abs(dx) / (rect.width / 2) + Math.abs(dy) / (rect.height / 2))
     return { x: c.x + dx * t, y: c.y + dy * t }
   }
   const scale = Math.min(
@@ -127,22 +152,39 @@ export function anchorPoint(node: GraphNode, toward: Point): Point {
   return { x: c.x + dx * scale, y: c.y + dy * scale }
 }
 
-/** Línea entre dos elementos, recortada en sus bordes. */
-export function edgeLine(source: GraphNode, target: GraphNode): { start: Point; end: Point } {
-  const sourceCenter = center(nodeRect(source))
-  const targetCenter = center(nodeRect(target))
-  return { start: anchorPoint(source, targetCenter), end: anchorPoint(target, sourceCenter) }
+/**
+ * Recorrido de una relación: desde el borde del origen, por los puntos de
+ * quiebre, hasta el borde del destino.
+ */
+export function edgeRoute(kind: string, edge: GraphEdge, source: GraphNode, target: GraphNode): Point[] {
+  const points = edge.points ?? []
+  const sourceCenter = center(nodeRect(kind, source))
+  const targetCenter = center(nodeRect(kind, target))
+  const first = points[0] ?? targetCenter
+  const last = points[points.length - 1] ?? sourceCenter
+  return [anchorPoint(kind, source, first), ...points, anchorPoint(kind, target, last)]
 }
 
-/** Rectángulo que abarca todos los elementos (para ajustar la vista y exportar). */
-export function contentBounds(nodes: GraphNode[], padding = 40): Rect {
+/** Rectángulo que abarca todos los elementos y codos (para encuadrar y exportar). */
+export function contentBounds(kind: string, nodes: GraphNode[], edges: GraphEdge[] = [], padding = 40): Rect {
   if (nodes.length === 0) return { x: 0, y: 0, width: 800, height: 500 }
-  const rects = nodes.map(nodeRect)
-  const minX = Math.min(...rects.map((rect) => rect.x))
-  const minY = Math.min(...rects.map((rect) => rect.y))
-  const maxX = Math.max(...rects.map((rect) => rect.x + rect.width))
-  const maxY = Math.max(...rects.map((rect) => rect.y + rect.height))
+  const rects = nodes.map((node) => nodeRect(kind, node))
+  const bends = edges.flatMap((edge) => edge.points ?? []).map((point) => ({ x: point.x, y: point.y, width: 0, height: 0 }))
+  const all = [...rects, ...bends]
+  const minX = Math.min(...all.map((rect) => rect.x))
+  const minY = Math.min(...all.map((rect) => rect.y))
+  const maxX = Math.max(...all.map((rect) => rect.x + rect.width))
+  const maxY = Math.max(...all.map((rect) => rect.y + rect.height))
   return { x: minX - padding, y: minY - padding, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 }
 }
 
 export const snap = (value: number, grid = 10) => Math.round(value / grid) * grid
+
+/** Distancia de un punto a un segmento (para insertar codos donde se hace doble clic). */
+export function distanceToSegment(point: Point, a: Point, b: Point) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const length = dx * dx + dy * dy
+  const t = length ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length)) : 0
+  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import DiagramPreview from '../DiagramPreview'
+import InterpretationPanel from '../InterpretationPanel'
 import GraphCanvas, { NODE_DRAG_TYPE, type CanvasController, type Selection } from './GraphCanvas'
 import PropertiesPanel from './PropertiesPanel'
 import SequenceCanvas, { PARTICIPANT_DRAG_TYPE } from './SequenceCanvas'
@@ -8,22 +9,22 @@ import { diagramFileName } from '../../../domain/diagramSvg'
 import { umlDiagramType } from '../../../domain/umlCatalog'
 import { generatePlantUml } from '../../../domain/uml/generatePlantUml'
 import { contentBounds, type Point } from '../../../domain/uml/geometry'
+import { interpretModel } from '../../../domain/uml/interpret'
+import { kindSpec } from '../../../domain/uml/kinds'
 import { addNode, addParticipant } from '../../../domain/uml/modelOps'
 import {
-  EDGE_LABELS,
   MESSAGE_LABELS,
-  NODE_LABELS,
-  PALETTE,
   PARTICIPANT_LABELS,
-  initialModel,
-  isVisualKind,
-  type EdgeType,
+  modelFromDiagram,
+  type GraphModel,
   type MessageType,
-  type NodeType,
   type ParticipantType,
-  type VisualModel,
+  type SequenceModel,
+  type CanvasModel,
 } from '../../../domain/uml/visualModel'
 import { useHistory } from '../../../hooks/useHistory'
+import { applyPatch } from '../../../domain/uml/liveSync'
+import type { LiveConnection } from '../live'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../../lib/diagramExport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
 
@@ -34,40 +35,29 @@ interface VisualEditorProps {
   onSaved: (diagram: Diagram) => void
   onDeleted: () => void
   onBack: () => void
+  /** Colaboración en vivo (opcional): cambios entrantes y salientes, y presencia. */
+  live?: LiveConnection
 }
 
-const NODE_ICONS: Record<NodeType, string> = {
-  actor: '웃', usecase: '◯', boundary: '▭', class: '▤', abstract: '▤', interface: '◌', enum: '≡', package: '▱', note: '✎',
-}
 const PARTICIPANT_ICONS: Record<ParticipantType, string> = {
-  actor: '웃', participant: '▭', boundary: '⊢', control: '↻', entity: '◉', database: '⛁',
+  actor: '웃', participant: '▭', boundary: '⊢', control: '↻', entity: '◉', database: '⛁', collections: '⧉', queue: '⇶',
 }
 const SEQUENCE_ZOOMS = [0.5, 0.75, 1, 1.25, 1.5]
 const editedAt = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-/** Modelo guardado, o uno vacío si no corresponde al tipo (datos dañados o de otra versión). */
-function loadModel(diagram: Diagram): VisualModel {
-  const raw = diagram.model as Partial<VisualModel> | null
-  const kind = isVisualKind(diagram.kind) ? diagram.kind : 'class'
-  if (raw && raw.kind === kind) {
-    if (kind === 'sequence' && Array.isArray((raw as { participants?: unknown }).participants) && Array.isArray((raw as { messages?: unknown }).messages)) return raw as VisualModel
-    if (kind !== 'sequence' && Array.isArray((raw as { nodes?: unknown }).nodes) && Array.isArray((raw as { edges?: unknown }).edges)) return raw as VisualModel
-  }
-  return initialModel(kind, false)
-}
-
 const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 
-/** Editor de arrastrar y soltar para casos de uso, clases y secuencia. Genera el PlantUML. */
-function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: VisualEditorProps) {
-  const savedModel = useMemo(() => loadModel(diagram), [diagram])
+/** Editor de arrastrar y soltar para los diagramas de grafo y de secuencia. Genera el PlantUML. */
+function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, live }: VisualEditorProps) {
+  const savedModel = useMemo(() => modelFromDiagram(diagram.kind, diagram.model) as CanvasModel, [diagram])
   const savedJson = useMemo(() => JSON.stringify(savedModel), [savedModel])
-  const history = useHistory<VisualModel>(savedModel)
+  const history = useHistory<CanvasModel>(savedModel)
   const { state: model, set: setModel, undo, redo, checkpoint } = history
+  const spec = model.kind === 'sequence' ? null : kindSpec(model.kind)
   const [name, setName] = useState(diagram.name)
   const [selection, setSelection] = useState<Selection>(null)
-  const [edgeType, setEdgeType] = useState<EdgeType>('association')
+  const [edgeType, setEdgeType] = useState(spec?.defaultEdge ?? 'association')
   const [messageType, setMessageType] = useState<MessageType>('sync')
   const [sequenceZoom, setSequenceZoom] = useState(1)
   const [view, setView] = useState<'canvas' | 'plantuml'>('canvas')
@@ -78,12 +68,35 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
   const controllerRef = useRef<CanvasController | null>(null)
 
   const source = useMemo(() => generatePlantUml(model), [model])
-  const empty = model.kind === 'sequence' ? model.participants.length === 0 : model.nodes.length === 0
+  const interpretation = useMemo(() => interpretModel(model), [model])
+  const empty = model.kind === 'sequence' ? (model as SequenceModel).participants.length === 0 : (model as GraphModel).nodes.length === 0
   const dirty = name.trim() !== diagram.name || JSON.stringify(model) !== savedJson
   const type = umlDiagramType(diagram.kind)
   const readOnly = !canEdit
 
-  const change = useCallback((next: VisualModel, record: boolean) => setModel(next, record), [setModel])
+  // Cambios propios: se aplican y se comparten con quienes están conectados.
+  const publishModel = live?.publishModel
+  const change = useCallback((next: CanvasModel, record: boolean) => {
+    setModel(next, record)
+    publishModel?.(next)
+  }, [publishModel, setModel])
+
+  // Cambios remotos (colaboración en vivo): se aplican sobre el estado propio, sin crear paso de deshacer.
+  const remote = live?.remotePatch
+  useEffect(() => {
+    if (remote) setModel((current) => applyPatch(current, remote.patch) as CanvasModel, false)
+  }, [remote, setModel])
+
+  // Punto de partida común: los envíos son diferencias sobre lo guardado.
+  const setBaseline = live?.setBaseline
+  useEffect(() => {
+    setBaseline?.(savedModel)
+  }, [savedModel, setBaseline])
+
+  const publishSelection = live?.publishSelection
+  useEffect(() => {
+    publishSelection?.(selection?.id ?? null)
+  }, [publishSelection, selection])
 
   const save = useCallback(async () => {
     if (readOnly || !dirty || saving) return
@@ -96,13 +109,14 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
         diagram.updated_at,
       )
       onSaved(saved)
+      live?.publishSaved(saved)
       setNotice('Cambios guardados.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el diagrama.')
     } finally {
       setSaving(false)
     }
-  }, [diagram, dirty, model, name, onSaved, readOnly, saving, source])
+  }, [diagram, dirty, live, model, name, onSaved, readOnly, saving, source])
 
   // Atajos: Ctrl+S guarda; Ctrl+Z / Ctrl+Y (o Ctrl+Mayús+Z) deshacen y rehacen fuera de los campos de texto.
   useEffect(() => {
@@ -139,23 +153,24 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
   const selectionExists =
     !selection ||
     (model.kind === 'sequence'
-      ? [...model.participants, ...model.messages].some((item) => item.id === selection.id)
-      : [...model.nodes, ...model.edges].some((item) => item.id === selection.id))
+      ? [...(model as SequenceModel).participants, ...(model as SequenceModel).messages].some((item) => item.id === selection.id)
+      : [...(model as GraphModel).nodes, ...(model as GraphModel).edges].some((item) => item.id === selection.id))
   const activeSelection = selectionExists ? selection : null
 
-  function addGraphNode(nodeType: NodeType, point?: Point) {
+  function addGraphNode(nodeType: string, point?: Point) {
     if (model.kind === 'sequence') return
     // Con clic en la paleta se busca un hueco libre cerca del centro de la vista.
+    const graph = model as GraphModel
     const result = point
-      ? addNode(model, nodeType, point)
-      : addNode(model, nodeType, controllerRef.current?.center() ?? { x: 300, y: 200 }, true)
+      ? addNode(graph, nodeType, point)
+      : addNode(graph, nodeType, controllerRef.current?.center() ?? { x: 300, y: 200 }, true)
     change(result.model, true)
     setSelection({ kind: 'node', id: result.id })
   }
 
   function addSequenceParticipant(participantType: ParticipantType, index?: number) {
     if (model.kind !== 'sequence') return
-    const result = addParticipant(model, participantType, index)
+    const result = addParticipant(model as SequenceModel, participantType, index)
     change(result.model, true)
     setSelection({ kind: 'participant', id: result.id })
   }
@@ -170,16 +185,14 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
     }
   }
 
-  async function convertToCode() {
-    const message = dirty
-      ? 'Se guardarán tus cambios y el diagrama pasará a modo código: desde ahí se edita escribiendo PlantUML y ya no con el lienzo. ¿Continuar?'
-      : 'El diagrama pasará a modo código: desde ahí se edita escribiendo PlantUML y ya no con el lienzo. ¿Continuar?'
-    if (!window.confirm(message)) return
+  /** Pasa a modo código conservando el modelo: al volver a visual se recuperan las posiciones. */
+  async function switchToCode() {
     try {
-      const saved = await updateDiagram(diagram.id, { name: name.trim() !== diagram.name ? name : undefined, mode: 'code', source, model: null }, diagram.updated_at)
+      const saved = await updateDiagram(diagram.id, { name: name.trim() !== diagram.name ? name : undefined, mode: 'code', source, model }, diagram.updated_at)
       onSaved(saved)
+      live?.publishSaved(saved)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo convertir el diagrama.')
+      setError(err instanceof Error ? err.message : 'No se pudo cambiar al modo código.')
     }
   }
 
@@ -193,7 +206,8 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
     try {
       if (format === 'puml') return downloadPlantUml(source, diagramFileName(name, 'puml'))
       if (!svgRef.current || view !== 'canvas') throw new Error('Vuelve a la pestaña «Lienzo» para exportar la imagen.')
-      const svg = canvasToSvg(svgRef.current, model.kind === 'sequence' ? null : contentBounds(model.nodes, 30))
+      const graph = model as GraphModel
+      const svg = canvasToSvg(svgRef.current, model.kind === 'sequence' ? null : contentBounds(graph.kind, graph.nodes, graph.edges, 30))
       if (format === 'svg') downloadSvg(svg, diagramFileName(name, 'svg'))
       else await downloadPng(svg, diagramFileName(name, 'png'))
     } catch (err) {
@@ -222,9 +236,9 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
       </div>
       <p className="uml-palette-title">Mensaje nuevo</p>
       <div className="uml-palette-items" role="radiogroup" aria-label="Tipo de mensaje nuevo">
-        {(Object.keys(MESSAGE_LABELS) as MessageType[]).map((type) => (
-          <button key={type} type="button" role="radio" aria-checked={messageType === type} onClick={() => setMessageType(type)} className={`uml-palette-item ${messageType === type ? 'uml-palette-item-active' : ''}`}>
-            {type === 'sync' ? '→' : type === 'async' ? '⇢' : '⇠'} {MESSAGE_LABELS[type]}
+        {(Object.keys(MESSAGE_LABELS) as MessageType[]).map((messageKind) => (
+          <button key={messageKind} type="button" role="radio" aria-checked={messageType === messageKind} onClick={() => setMessageType(messageKind)} className={`uml-palette-item ${messageType === messageKind ? 'uml-palette-item-active' : ''}`}>
+            {messageKind === 'sync' ? '→' : messageKind === 'async' ? '⇢' : '⇠'} {MESSAGE_LABELS[messageKind]}
           </button>
         ))}
       </div>
@@ -233,36 +247,40 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
     <div className="uml-palette">
       <p className="uml-palette-title">Elementos</p>
       <div className="uml-palette-items">
-        {PALETTE[model.kind].nodes.map((nodeType) => (
+        {spec?.nodes.map((nodeSpecValue) => (
           <button
-            key={nodeType}
+            key={nodeSpecValue.type}
             type="button"
             disabled={readOnly}
             draggable={!readOnly}
-            onDragStart={(event) => event.dataTransfer.setData(NODE_DRAG_TYPE, nodeType)}
-            onClick={() => addGraphNode(nodeType)}
+            onDragStart={(event) => event.dataTransfer.setData(NODE_DRAG_TYPE, nodeSpecValue.type)}
+            onClick={() => addGraphNode(nodeSpecValue.type)}
             className="uml-palette-item"
             title="Clic para agregar o arrástralo al lienzo"
           >
-            <span aria-hidden="true">{NODE_ICONS[nodeType]}</span> {NODE_LABELS[nodeType]}
+            <span aria-hidden="true">{nodeSpecValue.icon}</span> {nodeSpecValue.label}
           </button>
         ))}
       </div>
-      <p className="uml-palette-title">Relación al conectar</p>
-      <div className="uml-palette-items" role="radiogroup" aria-label="Tipo de relación al conectar">
-        {PALETTE[model.kind].edges.map((type) => (
-          <button key={type} type="button" role="radio" aria-checked={edgeType === type} onClick={() => setEdgeType(type)} className={`uml-palette-item ${edgeType === type ? 'uml-palette-item-active' : ''}`}>
-            {EDGE_LABELS[type]}
-          </button>
-        ))}
-      </div>
+      {(spec?.edges.length ?? 0) > 1 && (
+        <>
+          <p className="uml-palette-title">Relación al conectar</p>
+          <div className="uml-palette-items" role="radiogroup" aria-label="Tipo de relación al conectar">
+            {spec?.edges.map((edgeSpecValue) => (
+              <button key={edgeSpecValue.type} type="button" role="radio" aria-checked={edgeType === edgeSpecValue.type} onClick={() => setEdgeType(edgeSpecValue.type)} className={`uml-palette-item ${edgeType === edgeSpecValue.type ? 'uml-palette-item-active' : ''}`}>
+                {edgeSpecValue.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 
   const canvas = model.kind === 'sequence' ? (
     <div className="relative h-full">
       <SequenceCanvas
-        model={model}
+        model={model as SequenceModel}
         readOnly={readOnly}
         selection={activeSelection}
         messageType={messageType}
@@ -280,7 +298,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
     </div>
   ) : (
     <GraphCanvas
-      model={model}
+      model={model as GraphModel}
       readOnly={readOnly}
       selection={activeSelection}
       edgeType={edgeType}
@@ -290,6 +308,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
       onChange={change}
       onCheckpoint={checkpoint}
       onAddNode={addGraphNode}
+      peers={live?.peers}
     />
   )
 
@@ -333,6 +352,18 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
             <button type="button" onClick={redo} disabled={!history.canRedo} className="flow-zoom-button" aria-label="Rehacer" title="Rehacer (Ctrl + Y)">↷</button>
           </div>
         )}
+        {canEdit && (
+          <button type="button" onClick={() => void switchToCode()} className="btn-ghost px-3 py-1.5 text-sm" title="Editar escribiendo PlantUML; puedes volver al lienzo cuando quieras">
+            ⌨ Editar como código
+          </button>
+        )}
+        {live && live.peers.length > 0 && (
+          <span className="uml-peers" title="Personas editando este diagrama ahora">
+            {live.peers.map((peer) => (
+              <span key={peer.key} className="uml-peer" style={{ borderColor: peer.color, color: peer.color }}>{peer.name}</span>
+            ))}
+          </span>
+        )}
         <span className="uml-editor-meta m-0">
           {readOnly ? 'Solo lectura: tu rol en este tablero es de lector.' : `Última edición: ${editedAt.format(new Date(diagram.updated_at))}`}
         </span>
@@ -357,15 +388,14 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
         <div className="uml-split">
           <div className="uml-generated">
             <pre className="uml-generated-code">{source}</pre>
-            {canEdit && (
-              <div className="uml-generated-actions">
-                <p>
-                  Este código se genera solo a partir del lienzo; PlantUML decide su propia distribución. Para editarlo a mano, pasa el
-                  diagrama a modo código (el lienzo deja de usarse).
-                </p>
-                <button type="button" onClick={() => void convertToCode()} className="btn-ghost px-3 py-1.5 text-sm">⌨ Pasar a modo código</button>
-              </div>
-            )}
+            <div className="uml-generated-actions">
+              <p>
+                Este código se genera a partir del lienzo.{' '}
+                {model.kind !== 'sequence' && (model as GraphModel).layout === 'canvas'
+                  ? 'Las relaciones llevan pistas de dirección para que PlantUML se acerque a tu distribución.'
+                  : 'PlantUML decide su propia distribución.'}
+              </p>
+            </div>
           </div>
           {empty ? (
             <div className="uml-preview"><p className="p-6 text-sm text-slate-500">Agrega elementos en el lienzo para ver el diagrama de PlantUML.</p></div>
@@ -374,6 +404,8 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: 
           )}
         </div>
       )}
+
+      <InterpretationPanel interpretation={interpretation} />
     </div>
   )
 }

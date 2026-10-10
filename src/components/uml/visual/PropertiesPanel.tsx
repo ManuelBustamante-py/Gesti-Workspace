@@ -1,21 +1,16 @@
 import type { ReactNode } from 'react'
 
 import type { Selection } from './GraphCanvas'
-import { isClassLike } from '../../../domain/uml/geometry'
-import { deleteEdge, deleteNode, deleteParticipant, moveMessage, moveParticipant, reverseEdge, updateEdge, updateNode } from '../../../domain/uml/modelOps'
+import { edgeSpec, kindSpec, nodeSpec } from '../../../domain/uml/kinds'
+import { addRawRow, deleteEdge, deleteNode, deleteParticipant, moveMessage, moveParticipant, reverseEdge, updateEdge, updateNode } from '../../../domain/uml/modelOps'
 import {
-  EDGE_LABELS,
   MESSAGE_LABELS,
-  NODE_LABELS,
-  PALETTE,
   PARTICIPANT_LABELS,
-  type EdgeType,
   type GraphModel,
   type MessageType,
-  type NodeType,
   type ParticipantType,
   type SequenceModel,
-  type VisualModel,
+  type CanvasModel as VisualModel,
 } from '../../../domain/uml/visualModel'
 
 interface PropertiesPanelProps {
@@ -28,8 +23,14 @@ interface PropertiesPanelProps {
   onSelect: (selection: Selection) => void
 }
 
-/** Tipos intercambiables entre sí sin perder información. */
-const SWAPPABLE: NodeType[][] = [['class', 'abstract', 'interface', 'enum'], ['actor', 'usecase'], ['boundary'], ['package'], ['note']]
+const CARDINALITIES = [
+  ['1', 'Exactamente uno (1)'],
+  ['0..1', 'Cero o uno (0..1)'],
+  ['1..*', 'Uno o muchos (1..*)'],
+  ['0..*', 'Cero o muchos (0..*)'],
+] as const
+
+const RAW_SNIPPETS = ['alt condición', 'else otra condición', 'end', 'loop cada elemento', 'opt opcional', 'note over p1 : nota', '== Fase ==', '...', 'activate p1', 'deactivate p1']
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -39,6 +40,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   )
 }
+
+const selectClass = 'theme-input w-full rounded-md px-2 py-1.5 text-sm'
 
 function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, onSelect }: PropertiesPanelProps) {
   // Escribir no crea un paso por tecla: el paso se guarda al entrar al campo.
@@ -60,43 +63,46 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
   }
 
   if (model.kind !== 'sequence') {
-    const graph: GraphModel = model
+    const graph = model as GraphModel
+    const spec = kindSpec(graph.kind)
     const node = selection?.kind === 'node' ? graph.nodes.find((item) => item.id === selection.id) : undefined
     const edge = selection?.kind === 'edge' ? graph.edges.find((item) => item.id === selection.id) : undefined
 
     if (node) {
-      const swappable = SWAPPABLE.find((group) => group.includes(node.type)) ?? [node.type]
-      const classLike = isClassLike(node)
+      const current = nodeSpec(graph.kind, node.type)
+      const swappable = current.group ? spec?.nodes.filter((item) => item.group === current.group) ?? [] : []
       return (
         <div className="uml-props">
-          <p className="uml-props-title">{NODE_LABELS[node.type]}</p>
-          <Field label="Nombre (Enter para otra línea)">{text(node.name, (value) => updateNode(graph, node.id, { name: value }), 2)}</Field>
+          <p className="uml-props-title">{current.label}</p>
+          {current.pseudo !== 'initial' && current.pseudo !== 'final' && current.pseudo !== 'fork' && current.pseudo !== 'join' && (
+            <Field label={current.pseudo === 'choice' ? 'Pregunta de la decisión' : 'Nombre (Enter para otra línea)'}>
+              {text(node.name, (value) => updateNode(graph, node.id, { name: value }), 2)}
+            </Field>
+          )}
           {swappable.length > 1 && (
             <Field label="Tipo">
-              <select
-                value={node.type}
-                disabled={readOnly}
-                onChange={(event) => onChange(updateNode(graph, node.id, { type: event.target.value as NodeType }), true)}
-                className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-              >
-                {swappable.map((type) => <option key={type} value={type}>{NODE_LABELS[type]}</option>)}
+              <select value={node.type} disabled={readOnly} onChange={(event) => onChange(updateNode(graph, node.id, { type: event.target.value }), true)} className={selectClass}>
+                {swappable.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
               </select>
             </Field>
           )}
-          {node.type !== 'note' && (
-            <Field label="Estereotipo (opcional)">{text(node.stereotype ?? '', (value) => updateNode(graph, node.id, { stereotype: value }))}</Field>
+          {node.type !== 'note' && !current.pseudo && (
+            <Field label={current.stereotype ? `Estereotipo extra (ya es «${current.stereotype}»)` : 'Estereotipo (opcional)'}>
+              {text(node.stereotype ?? '', (value) => updateNode(graph, node.id, { stereotype: value }))}
+            </Field>
           )}
-          {classLike && (
-            <Field label={node.type === 'enum' ? 'Valores (uno por línea)' : 'Atributos (uno por línea, p. ej. - id: UUID)'}>
+          {current.members && (
+            <Field label={current.members === 'class' ? 'Atributos (uno por línea, p. ej. - id: UUID)' : node.type === 'enum' ? 'Valores (uno por línea)' : 'Campos (uno por línea)'}>
               {text((node.attributes ?? []).join('\n'), (value) => updateNode(graph, node.id, { attributes: value.split('\n') }), 4, true)}
             </Field>
           )}
-          {classLike && node.type !== 'enum' && (
+          {current.members === 'class' && (
             <Field label="Métodos (uno por línea, p. ej. + guardar(): void)">
               {text((node.methods ?? []).join('\n'), (value) => updateNode(graph, node.id, { methods: value.split('\n') }), 4, true)}
             </Field>
           )}
-          {classLike && <p className="uml-props-hint">Visibilidad: + público, - privado, # protegido, ~ paquete. {'{static}'} y {'{abstract}'} también funcionan.</p>}
+          {current.members === 'class' && <p className="uml-props-hint">Visibilidad: + público, - privado, # protegido, ~ paquete. {'{static}'} y {'{abstract}'} también funcionan.</p>}
+          {graph.kind === 'er' && <p className="uml-props-hint">«* campo» obligatorio, «&lt;&lt;PK&gt;&gt;» y «&lt;&lt;FK&gt;&gt;» marcan claves; «--» separa la clave del resto.</p>}
           {!readOnly && (
             <button type="button" onClick={() => remove(deleteNode(graph, node.id))} className="btn-danger mt-2 w-full px-3 py-1.5 text-sm">
               Eliminar elemento
@@ -107,36 +113,58 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
     }
 
     if (edge) {
+      const current = edgeSpec(graph.kind, edge.type)
       const involvesNote = graph.nodes.some((item) => (item.id === edge.source || item.id === edge.target) && item.type === 'note')
-      const types: EdgeType[] = involvesNote ? ['note-link'] : PALETTE[graph.kind].edges
+      const types = involvesNote ? [edgeSpec(graph.kind, 'note-link')] : spec?.edges ?? []
       const name = (id: string) => graph.nodes.find((item) => item.id === id)?.name.split('\n')[0] ?? '?'
       return (
         <div className="uml-props">
           <p className="uml-props-title">Relación</p>
           <p className="uml-props-hint">{name(edge.source)} → {name(edge.target)}</p>
           <Field label="Tipo">
-            <select
-              value={edge.type}
-              disabled={readOnly || involvesNote}
-              onChange={(event) => onChange(updateEdge(graph, edge.id, { type: event.target.value as EdgeType }), true)}
-              className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-            >
-              {types.map((type) => <option key={type} value={type}>{EDGE_LABELS[type]}</option>)}
+            <select value={edge.type} disabled={readOnly || involvesNote} onChange={(event) => onChange(updateEdge(graph, edge.id, { type: event.target.value }), true)} className={selectClass}>
+              {types.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
             </select>
           </Field>
           {edge.type !== 'include' && edge.type !== 'extend' && (
-            <Field label="Etiqueta">{text(edge.label ?? '', (value) => updateEdge(graph, edge.id, { label: value }))}</Field>
+            <Field label={current.fixedText ? `Texto adicional (después de «${current.fixedText}»)` : graph.kind === 'communication' ? 'Mensajes (p. ej. 1: pagar())' : 'Etiqueta'}>
+              {text(edge.label ?? '', (value) => updateEdge(graph, edge.id, { label: value }))}
+            </Field>
           )}
-          {graph.kind === 'class' && edge.type !== 'note-link' && (
+          {current.ends === 'multiplicity' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label={`Extremo ${name(edge.source)}`}>{text(edge.sourceLabel ?? '', (value) => updateEdge(graph, edge.id, { sourceLabel: value }))}</Field>
+                <Field label={`Extremo ${name(edge.target)}`}>{text(edge.targetLabel ?? '', (value) => updateEdge(graph, edge.id, { targetLabel: value }))}</Field>
+              </div>
+              <p className="uml-props-hint">Multiplicidad o rol en cada extremo: 1, 0..1, *, 1..*.</p>
+            </>
+          )}
+          {current.ends === 'cardinality' && (
             <div className="grid grid-cols-2 gap-2">
-              <Field label={`Extremo ${name(edge.source)}`}>{text(edge.sourceLabel ?? '', (value) => updateEdge(graph, edge.id, { sourceLabel: value }))}</Field>
-              <Field label={`Extremo ${name(edge.target)}`}>{text(edge.targetLabel ?? '', (value) => updateEdge(graph, edge.id, { targetLabel: value }))}</Field>
+              {(['sourceLabel', 'targetLabel'] as const).map((key) => (
+                <Field key={key} label={`Lado ${name(key === 'sourceLabel' ? edge.source : edge.target)}`}>
+                  <select
+                    value={edge[key]?.trim() || (key === 'sourceLabel' ? '1' : '0..*')}
+                    disabled={readOnly}
+                    onChange={(event) => onChange(updateEdge(graph, edge.id, { [key]: event.target.value }), true)}
+                    className={selectClass}
+                  >
+                    {CARDINALITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </Field>
+              ))}
             </div>
           )}
-          {graph.kind === 'class' && <p className="uml-props-hint">Multiplicidad o rol en cada extremo: 1, 0..1, *, 1..*.</p>}
+          {(edge.points?.length ?? 0) > 0 && (
+            <p className="uml-props-hint">{edge.points!.length} codo(s). Doble clic sobre un codo para quitarlo.</p>
+          )}
           {!readOnly && (
             <div className="mt-2 grid gap-2">
               <button type="button" onClick={() => onChange(reverseEdge(graph, edge.id), true)} className="btn-ghost px-3 py-1.5 text-sm">⇄ Invertir dirección</button>
+              {(edge.points?.length ?? 0) > 0 && (
+                <button type="button" onClick={() => onChange(updateEdge(graph, edge.id, { points: undefined }), true)} className="btn-ghost px-3 py-1.5 text-sm">Quitar codos (línea recta)</button>
+              )}
               <button type="button" onClick={() => remove(deleteEdge(graph, edge.id))} className="btn-danger px-3 py-1.5 text-sm">Eliminar relación</button>
             </div>
           )}
@@ -147,21 +175,36 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
     return (
       <div className="uml-props">
         <p className="uml-props-title">Diagrama</p>
-        <Field label="Orientación al generar PlantUML">
-          <select
-            value={graph.direction}
-            disabled={readOnly}
-            onChange={(event) => onChange({ ...graph, direction: event.target.value as GraphModel['direction'] }, true)}
-            className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-          >
-            <option value="top-to-bottom">De arriba hacia abajo</option>
-            <option value="left-to-right">De izquierda a derecha</option>
+        <Field label="Título (opcional)">{text(graph.title ?? '', (value) => ({ ...graph, title: value }))}</Field>
+        <Field label="Distribución en PlantUML">
+          <select value={graph.layout ?? 'auto'} disabled={readOnly} onChange={(event) => onChange({ ...graph, layout: event.target.value as GraphModel['layout'] }, true)} className={selectClass}>
+            <option value="canvas">Aproximar la del lienzo</option>
+            <option value="auto">Automática de PlantUML</option>
           </select>
         </Field>
+        <p className="uml-props-hint">
+          {graph.layout === 'canvas'
+            ? 'Cada relación le indica a PlantUML hacia dónde está el otro elemento en el lienzo (arriba, abajo, izquierda o derecha). Es una aproximación: PlantUML no admite posiciones exactas ni codos.'
+            : 'PlantUML ordena los elementos por su cuenta.'}
+        </p>
+        {graph.layout !== 'canvas' && (
+          <Field label="Orientación">
+            <select value={graph.direction} disabled={readOnly} onChange={(event) => onChange({ ...graph, direction: event.target.value as GraphModel['direction'] }, true)} className={selectClass}>
+              <option value="top-to-bottom">De arriba hacia abajo</option>
+              <option value="left-to-right">De izquierda a derecha</option>
+            </select>
+          </Field>
+        )}
+        {(graph.extra?.length ?? 0) > 0 && (
+          <Field label="PlantUML adicional (se conserva tal cual)">
+            {text((graph.extra ?? []).join('\n'), (value) => ({ ...graph, extra: value.split('\n') }), 4, true)}
+          </Field>
+        )}
         <ul className="uml-props-help">
           <li>Arrastra elementos desde la paleta o haz clic en ellos.</li>
           <li>Selecciona un elemento y arrastra su <strong>⊕</strong> hasta otro para conectarlos con la relación activa.</li>
-          <li>Lo que sueltes dentro de un {graph.kind === 'usecase' ? 'límite del sistema' : 'paquete'} queda agrupado en él.</li>
+          <li>Doble clic sobre una relación agrega un codo; arrástralo para darle forma.</li>
+          {spec?.containerHint && <li>Lo que sueltes dentro de un {spec.containerHint} queda agrupado en él.</li>}
           <li>Rueda: desplazar · Ctrl + rueda: zoom · Supr: eliminar · flechas: mover.</li>
           <li>Ctrl + Z / Ctrl + Y: deshacer y rehacer · Ctrl + S: guardar.</li>
         </ul>
@@ -169,7 +212,7 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
     )
   }
 
-  const sequence: SequenceModel = model
+  const sequence = model as SequenceModel
   const participant = selection?.kind === 'participant' ? sequence.participants.find((item) => item.id === selection.id) : undefined
   const message = selection?.kind === 'message' ? sequence.messages.find((item) => item.id === selection.id) : undefined
 
@@ -184,15 +227,11 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
         <p className="uml-props-title">Participante</p>
         <Field label="Nombre">{text(participant.name, (value) => update({ name: value }))}</Field>
         <Field label="Tipo">
-          <select
-            value={participant.type}
-            disabled={readOnly}
-            onChange={(event) => onChange(update({ type: event.target.value as ParticipantType }), true)}
-            className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-          >
+          <select value={participant.type} disabled={readOnly} onChange={(event) => onChange(update({ type: event.target.value as ParticipantType }), true)} className={selectClass}>
             {(Object.keys(PARTICIPANT_LABELS) as ParticipantType[]).map((type) => <option key={type} value={type}>{PARTICIPANT_LABELS[type]}</option>)}
           </select>
         </Field>
+        <p className="uml-props-hint">Alias en PlantUML: {participant.id}</p>
         {!readOnly && (
           <div className="mt-2 grid gap-2">
             <div className="grid grid-cols-2 gap-2">
@@ -212,13 +251,29 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
       ...sequence,
       messages: sequence.messages.map((item) => (item.id === message.id ? { ...item, ...patch } : item)),
     })
+    const moveButtons = !readOnly && (
+      <div className="mt-2 grid gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" disabled={position === 0} onClick={() => onChange(moveMessage(sequence, message.id, position - 1), true)} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-40">↑ Antes</button>
+          <button type="button" disabled={position === sequence.messages.length - 1} onClick={() => onChange(moveMessage(sequence, message.id, position + 1), true)} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-40">↓ Después</button>
+        </div>
+        <button type="button" onClick={() => remove({ ...sequence, messages: sequence.messages.filter((item) => item.id !== message.id) })} className="btn-danger px-3 py-1.5 text-sm">
+          Eliminar {message.raw !== undefined ? 'fila' : 'mensaje'}
+        </button>
+      </div>
+    )
+    if (message.raw !== undefined) {
+      return (
+        <div className="uml-props">
+          <p className="uml-props-title">Fila de PlantUML</p>
+          <Field label="Texto (alt, else, end, loop, note, ==, activate…)">{text(message.raw, (value) => update({ raw: value }), 1, true)}</Field>
+          <p className="uml-props-hint">Los participantes se nombran por su alias (p1, p2…), visible al seleccionarlos.</p>
+          {moveButtons}
+        </div>
+      )
+    }
     const participantSelect = (value: string, key: 'from' | 'to') => (
-      <select
-        value={value}
-        disabled={readOnly}
-        onChange={(event) => onChange(update({ [key]: event.target.value }), true)}
-        className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-      >
+      <select value={value} disabled={readOnly} onChange={(event) => onChange(update({ [key]: event.target.value }), true)} className={selectClass}>
         {sequence.participants.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
     )
@@ -227,12 +282,7 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
         <p className="uml-props-title">Mensaje {position + 1}</p>
         <Field label="Texto">{text(message.label, (value) => update({ label: value }))}</Field>
         <Field label="Tipo">
-          <select
-            value={message.type}
-            disabled={readOnly}
-            onChange={(event) => onChange(update({ type: event.target.value as MessageType }), true)}
-            className="theme-input w-full rounded-md px-2 py-1.5 text-sm"
-          >
+          <select value={message.type} disabled={readOnly} onChange={(event) => onChange(update({ type: event.target.value as MessageType }), true)} className={selectClass}>
             {(Object.keys(MESSAGE_LABELS) as MessageType[]).map((type) => <option key={type} value={type}>{MESSAGE_LABELS[type]}</option>)}
           </select>
         </Field>
@@ -240,15 +290,7 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
           <Field label="Desde">{participantSelect(message.from, 'from')}</Field>
           <Field label="Hacia">{participantSelect(message.to, 'to')}</Field>
         </div>
-        {!readOnly && (
-          <div className="mt-2 grid gap-2">
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={position === 0} onClick={() => onChange(moveMessage(sequence, message.id, position - 1), true)} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-40">↑ Antes</button>
-              <button type="button" disabled={position === sequence.messages.length - 1} onClick={() => onChange(moveMessage(sequence, message.id, position + 1), true)} className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-40">↓ Después</button>
-            </div>
-            <button type="button" onClick={() => remove({ ...sequence, messages: sequence.messages.filter((item) => item.id !== message.id) })} className="btn-danger px-3 py-1.5 text-sm">Eliminar mensaje</button>
-          </div>
-        )}
+        {moveButtons}
       </div>
     )
   }
@@ -256,14 +298,32 @@ function PropertiesPanel({ model, selection, readOnly, onChange, onCheckpoint, o
   return (
     <div className="uml-props">
       <p className="uml-props-title">Diagrama</p>
+      <Field label="Título (opcional)">{text(sequence.title ?? '', (value) => ({ ...sequence, title: value }))}</Field>
       <label className="flex items-center gap-2 text-sm text-[var(--text-main)]">
         <input type="checkbox" checked={sequence.autonumber} disabled={readOnly} onChange={(event) => onChange({ ...sequence, autonumber: event.target.checked }, true)} />
         Numerar los mensajes
       </label>
+      {!readOnly && (
+        <Field label="Agregar fragmento o fila al final">
+          <select
+            value=""
+            onChange={(event) => {
+              if (!event.target.value) return
+              const result = addRawRow(sequence, event.target.value)
+              onChange(result.model, true)
+              onSelect({ kind: 'message', id: result.id })
+            }}
+            className={`${selectClass} mt-1`}
+          >
+            <option value="">Elegir…</option>
+            {RAW_SNIPPETS.map((snippet) => <option key={snippet} value={snippet}>{snippet}</option>)}
+          </select>
+        </Field>
+      )}
       <ul className="uml-props-help">
         <li>Agrega participantes desde la paleta (clic o arrastre).</li>
         <li>Arrastra de una línea de vida a otra para crear un mensaje del tipo activo; a la misma línea, un mensaje a sí mismo.</li>
-        <li>Arrastra un participante en horizontal o un mensaje en vertical para reordenarlos.</li>
+        <li>Los fragmentos (alt, loop…) son filas que se arrastran como los mensajes: ubícalos antes y después de lo que agrupan.</li>
         <li>Supr: eliminar · flechas: reordenar · Ctrl + Z / Ctrl + Y · Ctrl + S.</li>
       </ul>
     </div>

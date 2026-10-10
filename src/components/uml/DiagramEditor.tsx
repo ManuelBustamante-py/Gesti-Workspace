@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import DiagramPreview, { type RenderState } from './DiagramPreview'
+import InterpretationPanel from './InterpretationPanel'
+import WireframeView from './structured/WireframeView'
+import type { LiveConnection } from './live'
+import { explainRegex } from '../../domain/uml/interpretStructured'
+import type { WireframeModel } from '../../domain/uml/structured'
 import { diagramFileName } from '../../domain/diagramSvg'
 import { umlDiagramType } from '../../domain/umlCatalog'
-import { downloadPlantUml, downloadPng, downloadSvg } from '../../lib/diagramExport'
+import { generatePlantUml } from '../../domain/uml/generatePlantUml'
+import { interpretModel } from '../../domain/uml/interpret'
+import { parsePlantUml } from '../../domain/uml/parsePlantUml'
+import { isVisualKind, modelFromDiagram } from '../../domain/uml/visualModel'
+import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../lib/diagramExport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../services/diagrams'
 
 interface DiagramEditorProps {
@@ -13,13 +22,15 @@ interface DiagramEditorProps {
   onSaved: (diagram: Diagram) => void
   onDeleted: () => void
   onBack: () => void
+  /** Colaboración en vivo: el texto se comparte (gana el último en escribir) y se ve quién está. */
+  live?: LiveConnection
 }
 
 const INDENT = '  '
 const editedAt = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 /** Editor de un diagrama en modo código: PlantUML a la izquierda, vista previa en vivo a la derecha. */
-function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }: DiagramEditorProps) {
+function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, live }: DiagramEditorProps) {
   const [name, setName] = useState(diagram.name)
   const [source, setSource] = useState(diagram.source)
   const [saving, setSaving] = useState(false)
@@ -31,7 +42,77 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
   const gutterRef = useRef<HTMLDivElement>(null)
 
   const type = umlDiagramType(diagram.kind)
+  const visualCapable = isVisualKind(diagram.kind)
   const dirty = name.trim() !== diagram.name || source !== diagram.source
+
+  // Interpretación en vivo: el código se lee como modelo (si el tipo lo permite).
+  const deferredSource = useDeferredValue(source)
+  const parsed = useMemo(() => {
+    if (!visualCapable) return null
+    try {
+      return parsePlantUml(deferredSource, diagram.kind, null)
+    } catch {
+      return null
+    }
+  }, [deferredSource, diagram.kind, visualCapable])
+  const interpretation = useMemo(() => {
+    if (diagram.kind === 'regex') return explainRegex(deferredSource)
+    return parsed ? interpretModel(parsed.model) : null
+  }, [deferredSource, diagram.kind, parsed])
+  // El wireframe se dibuja con el renderizador propio (el motor no incluye Salt).
+  const wireframe = diagram.kind === 'wireframe' && parsed ? (parsed.model as WireframeModel) : null
+  const wireRef = useRef<SVGSVGElement | null>(null)
+
+  // Colaboración en vivo: el texto propio se comparte; el ajeno se aplica si no estás escribiendo.
+  const lastLocalEdit = useRef(0)
+  const publishSource = live?.publishSource
+  const changeSource = (value: string) => {
+    lastLocalEdit.current = Date.now()
+    setSource(value)
+    publishSource?.(value)
+  }
+  const remoteSource = live?.remoteSource
+  useEffect(() => {
+    if (!remoteSource) return
+    const apply = () => {
+      if (lastLocalEdit.current > remoteSource.stamp) return
+      setSource(remoteSource.source)
+      setNotice(`${remoteSource.from} actualizó el código.`)
+    }
+    const wait = 1500 - (Date.now() - lastLocalEdit.current)
+    if (wait <= 0) {
+      apply()
+      return
+    }
+    const timer = setTimeout(apply, wait)
+    return () => clearTimeout(timer)
+  }, [remoteSource])
+
+  /**
+   * Pasa al lienzo: el código se interpreta como modelo. Los elementos que ya
+   * estaban en el lienzo antes conservan su posición; lo que el editor visual no
+   * maneja se conserva como PlantUML adicional.
+   */
+  async function switchToVisual() {
+    setError('')
+    try {
+      const previous = diagram.model ? modelFromDiagram(diagram.kind, diagram.model) : null
+      const result = parsePlantUml(source, diagram.kind, previous)
+      const notes = [
+        ...result.warnings,
+        ...(result.kept.length ? [`${result.kept.length} línea(s) que el lienzo no dibuja se conservan como PlantUML adicional (p. ej. «${result.kept[0]}»).`] : []),
+      ]
+      if (notes.length && !window.confirm(`Al pasar al lienzo:\n\n• ${notes.slice(0, 6).join('\n• ')}\n\n¿Continuar?`)) return
+      const saved = await updateDiagram(
+        diagram.id,
+        { name: name.trim() !== diagram.name ? name : undefined, mode: 'visual', model: result.model, source: generatePlantUml(result.model) },
+        diagram.updated_at,
+      )
+      onSaved(saved)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo pasar el diagrama al lienzo.')
+    }
+  }
   const errorLine = render.status === 'ready' ? render.error?.line ?? null : null
   const lineCount = source.split('\n').length
 
@@ -46,13 +127,14 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
         diagram.updated_at,
       )
       onSaved(saved)
+      live?.publishSaved(saved)
       setNotice('Cambios guardados.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el diagrama.')
     } finally {
       setSaving(false)
     }
-  }, [canEdit, diagram, dirty, name, onSaved, saving, source])
+  }, [canEdit, diagram, dirty, live, name, onSaved, saving, source])
 
   // Ctrl/⌘ + S guarda; al salir con cambios sin guardar, el navegador pregunta.
   useEffect(() => {
@@ -94,14 +176,14 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
       } else {
         area.setRangeText(INDENT, start, end, 'end')
       }
-      setSource(area.value)
+      changeSource(area.value)
     } else if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
       const lineStart = value.lastIndexOf('\n', start - 1) + 1
       const indent = /^[ \t]*/.exec(value.slice(lineStart, start))?.[0] ?? ''
       if (!indent) return
       event.preventDefault()
       area.setRangeText(`\n${indent}`, start, end, 'end')
-      setSource(area.value)
+      changeSource(area.value)
     }
   }
 
@@ -134,9 +216,16 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
     setError('')
     try {
       if (format === 'puml') return downloadPlantUml(source, diagramFileName(name, 'puml'))
-      if (render.status !== 'ready') throw new Error('Espera a que se dibuje el diagrama.')
-      if (format === 'svg') downloadSvg(render.svg, diagramFileName(name, 'svg'))
-      else await downloadPng(render.svg, diagramFileName(name, 'png'))
+      let svg: string
+      if (wireframe) {
+        if (!wireRef.current) throw new Error('No se encontró la vista del wireframe.')
+        svg = canvasToSvg(wireRef.current, null)
+      } else {
+        if (render.status !== 'ready') throw new Error('Espera a que se dibuje el diagrama.')
+        svg = render.svg
+      }
+      if (format === 'svg') downloadSvg(svg, diagramFileName(name, 'svg'))
+      else await downloadPng(svg, diagramFileName(name, 'png'))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo exportar el diagrama.')
     }
@@ -152,7 +241,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
       <textarea
         ref={textareaRef}
         value={source}
-        onChange={(event) => setSource(event.target.value)}
+        onChange={(event) => changeSource(event.target.value)}
         onKeyDown={handleKeyDown}
         onScroll={(event) => {
           if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop
@@ -167,7 +256,14 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
       />
     </div>
   )
-  const preview = <DiagramPreview source={source} onRendered={setRender} />
+  const preview = wireframe ? (
+    <div className="uml-preview">
+      <div className="uml-preview-bar"><span className="uml-preview-status text-[var(--text-muted)]">Wireframe dibujado por la plataforma (Salt)</span></div>
+      <div className="uml-preview-canvas wire-canvas"><WireframeView model={wireframe} svgRef={wireRef} /></div>
+    </div>
+  ) : (
+    <DiagramPreview source={source} onRendered={setRender} />
+  )
 
   return (
     <div className="uml-editor">
@@ -204,6 +300,16 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
         {errorLine && (
           <button type="button" onClick={() => goToLine(errorLine)} className="ml-2 underline hover:text-white">Ir a la línea {errorLine}</button>
         )}
+        {canEdit && visualCapable && (
+          <button type="button" onClick={() => void switchToVisual()} className="btn-ghost ml-3 px-3 py-1 text-xs" title="Convierte el código en el editor visual; puedes volver al código cuando quieras">
+            ✥ Editar en modo visual
+          </button>
+        )}
+        {live && live.peers.length > 0 && (
+          <span className="uml-peers ml-3" title="Personas en este diagrama ahora">
+            {live.peers.map((peer) => <span key={peer.key} className="uml-peer" style={{ borderColor: peer.color, color: peer.color }}>{peer.name}</span>)}
+          </span>
+        )}
       </p>
       {error && <p className="alert-error mb-3 rounded-lg p-3 text-sm" role="alert">{error}</p>}
       {notice && <p className="mb-3 text-sm text-[var(--status-done)]" role="status">✓ {notice}</p>}
@@ -224,6 +330,10 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack }:
           {preview}
         </div>
       )}
+      <InterpretationPanel
+        interpretation={interpretation}
+        unavailable={visualCapable || diagram.kind === 'regex' ? 'No se pudo leer el código para interpretarlo.' : 'Este tipo de diagrama no tiene interpretación automática.'}
+      />
     </div>
   )
 }

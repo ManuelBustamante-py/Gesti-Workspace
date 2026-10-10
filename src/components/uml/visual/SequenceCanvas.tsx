@@ -74,6 +74,20 @@ function ParticipantIcon({ type, cx, cy }: { type: ParticipantType; cx: number; 
           <ellipse cx={cx} cy={cy - 12} rx={14} ry={5} />
         </g>
       )
+    case 'collections':
+      return (
+        <g {...stroke}>
+          <rect x={cx - 12} y={cy - 16} width={26} height={22} />
+          <rect x={cx - 16} y={cy - 12} width={26} height={22} />
+        </g>
+      )
+    case 'queue':
+      return (
+        <g {...stroke}>
+          <path d={`M ${cx - 16} ${cy - 10} H ${cx + 12} A 5 10 0 0 1 ${cx + 12} ${cy + 10} H ${cx - 16} A 5 10 0 0 1 ${cx - 16} ${cy - 10} Z`} />
+          <path d={`M ${cx + 12} ${cy - 10} A 5 10 0 0 0 ${cx + 12} ${cy + 10}`} fill="none" />
+        </g>
+      )
     default:
       return null
   }
@@ -196,7 +210,6 @@ function SequenceCanvas({ model, readOnly, selection, messageType, zoom, svgRef,
           : { ...model, messages: model.messages.filter((message) => message.id !== selection.id) },
         true,
       )
-      onSelect(null)
     } else if (event.key === 'Escape') {
       onSelect(null)
     } else if (selection.kind === 'message' && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
@@ -274,6 +287,19 @@ function SequenceCanvas({ model, readOnly, selection, messageType, zoom, svgRef,
         })}
 
         {model.messages.map((message, position) => {
+          if (message.raw !== undefined) {
+            // Fila de PlantUML libre (alt, else, loop, nota…): banda gris a lo ancho.
+            const y = messageY(position)
+            const shift = offset?.id === message.id ? offset.dy : 0
+            const selected = selection?.kind === 'message' && selection.id === message.id
+            const closing = /^(end|else)\b/.test(message.raw.trim())
+            return (
+              <g key={message.id} data-message-id={message.id} className="uml-edge" transform={shift ? `translate(0 ${shift})` : undefined}>
+                <rect x={LEFT / 2} y={y - 15} width={width - LEFT} height={26} rx={4} fill={closing ? '#f0f3f4' : '#e8efee'} stroke={selected ? COLORS.accent : '#c9d4d6'} strokeWidth={selected ? 2 : 1} strokeDasharray={closing ? '4 3' : undefined} />
+                <text x={LEFT / 2 + 10} y={y + 3} fontSize={11.5} fontFamily="ui-monospace, Consolas, monospace" fill={COLORS.muted}>{message.raw.trim() || '(fila vacía)'}</text>
+              </g>
+            )
+          }
           const from = index.get(message.from)
           const to = index.get(message.to)
           if (from === undefined || to === undefined) return null

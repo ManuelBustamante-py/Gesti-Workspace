@@ -585,9 +585,19 @@ export const UML_DIAGRAM_TYPES: UmlDiagramType[] = [
   },
   {
     // Salt (@startsalt) no viene en el motor de PlantUML para navegador.
-    id: 'wireframe', name: 'Esquema de alambre (wireframe)', english: 'Wireframe Diagram', category: 'process', support: 'unavailable',
-    note: 'El motor de PlantUML para navegador aún no incluye Salt (wireframes). Se cubrirá con el editor visual.',
-    template: '',
+    id: 'wireframe', name: 'Esquema de alambre (wireframe)', english: 'Wireframe Diagram', category: 'process', support: 'adapted',
+    note: 'Se dibuja con el renderizador propio de la plataforma (el motor de PlantUML para navegador no incluye Salt). El código se genera en sintaxis Salt, compatible con PlantUML.',
+    template: lines(
+      '@startsalt',
+      '{+',
+      '  <b>Iniciar sesión',
+      '  Correo | "usuario@empresa.cl"',
+      '  Contraseña | "****"',
+      '  [X] Recordarme',
+      '  [Cancelar] | [Ingresar]',
+      '}',
+      '@endsalt',
+    ),
   },
   {
     id: 'mindmap', name: 'Mapa mental', english: 'Mindmap Diagram', category: 'process', support: 'native',
