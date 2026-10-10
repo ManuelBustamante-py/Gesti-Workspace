@@ -927,6 +927,16 @@ function Dashboard() {
             <span aria-hidden="true">🔒 </span>
             <span className="sidebar-label">Seguridad</span>
           </button>
+          {selectedBoard && (
+            <Link
+              to={`/dashboard/uml/${selectedBoard.id}`}
+              title="Diagramas UML del tablero"
+              className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[var(--text-muted)] hover:bg-white/5"
+            >
+              <span aria-hidden="true" className="uml-nav-icon">⧉ </span>
+              <span className="sidebar-label">Diagramas UML</span>
+            </Link>
+          )}
         </nav>
       </aside>
 

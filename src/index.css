@@ -1955,3 +1955,183 @@ a:focus-visible {
 @media (max-width: 767px) {
   .board-summary-chip { min-height: 2.25rem; }
 }
+
+/* ---- Diagramas UML ---- */
+.uml-nav-icon { font-weight: 700; }
+
+/* Catálogo de «Añadir diagrama» */
+.uml-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: 0.5rem;
+}
+.uml-type {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 1px solid rgba(166, 180, 184, 0.14);
+  border-radius: 0.75rem;
+  background: rgba(166, 180, 184, 0.04);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.uml-type:hover:not(:disabled) { border-color: rgba(166, 180, 184, 0.35); }
+.uml-type:disabled { cursor: not-allowed; opacity: 0.45; }
+.uml-type-active { border-color: var(--accent-mint); background: rgba(166, 180, 184, 0.14); }
+.uml-type-name { color: var(--text-main); font-size: 0.85rem; font-weight: 600; line-height: 1.25; }
+.uml-type-english { color: var(--text-muted); font-size: 0.7rem; }
+.uml-type-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
+
+.uml-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.uml-badge-native { background: rgba(70, 160, 110, 0.18); color: #8fd6ad; }
+.uml-badge-adapted { background: rgba(214, 170, 98, 0.16); color: #e6c48c; }
+.uml-badge-unavailable { background: rgba(166, 180, 184, 0.12); color: var(--text-muted); }
+.uml-badge-visual { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+
+.uml-selected {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 1rem;
+}
+.uml-mode {
+  border: 1px solid rgba(166, 180, 184, 0.18);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.uml-mode-active { border-color: var(--accent-mint); color: var(--text-main); }
+
+/* Galería */
+.uml-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.75rem;
+}
+.uml-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  height: 100%;
+  border-radius: 1rem;
+  padding: 1rem;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+.uml-card:hover { border-color: rgba(166, 180, 184, 0.35); transform: translateY(-1px); }
+.uml-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  background: rgba(166, 180, 184, 0.1);
+  color: var(--accent-ui);
+  font-size: 1.2rem;
+}
+.uml-card-name { display: block; overflow-wrap: anywhere; color: #fff; font-weight: 600; }
+.uml-card-type { display: block; margin-top: 0.15rem; color: var(--text-muted); font-size: 0.8rem; }
+.uml-card-meta { display: block; margin-top: 0.4rem; color: #6b777b; font-size: 0.72rem; }
+
+/* Editor */
+.uml-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.uml-editor-meta {
+  margin: 0.6rem 0 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.uml-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 0.9rem;
+  height: calc(100dvh - 15rem);
+  min-height: 28rem;
+}
+.uml-code {
+  display: flex;
+  height: 100%;
+  min-height: 24rem;
+  overflow: hidden;
+  border: 1px solid rgba(166, 180, 184, 0.14);
+  border-radius: 0.75rem;
+  background: #111517;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.uml-gutter {
+  flex-shrink: 0;
+  overflow: hidden;
+  border-right: 1px solid rgba(166, 180, 184, 0.1);
+  padding: 0.75rem 0.5rem 0.75rem 0.6rem;
+  color: #5d6a6e;
+  text-align: right;
+  user-select: none;
+}
+.uml-gutter span { display: block; min-width: 1.6rem; }
+.uml-gutter-error { border-radius: 0.25rem; background: rgba(224, 96, 122, 0.25); color: #f3a3b3; }
+.uml-textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 0.75rem;
+  color: #e8ecec;
+  font: inherit;
+  line-height: inherit;
+  white-space: pre;
+  tab-size: 2;
+  outline: none;
+}
+.uml-textarea:focus-visible { box-shadow: inset 0 0 0 2px rgba(166, 180, 184, 0.35); }
+
+.uml-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 24rem;
+  overflow: hidden;
+  border: 1px solid rgba(166, 180, 184, 0.14);
+  border-radius: 0.75rem;
+  background: #0f1314;
+}
+.uml-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(166, 180, 184, 0.1);
+  padding: 0.45rem 0.6rem;
+}
+.uml-preview-status { font-size: 0.75rem; }
+/* Lienzo claro: los diagramas de PlantUML están pensados sobre fondo blanco. */
+.uml-preview-canvas {
+  flex: 1;
+  overflow: auto;
+  margin: 0.6rem;
+  border-radius: 0.5rem;
+  background: #fbfcfc;
+  padding: 1rem;
+}
+.uml-preview-canvas img { display: block; margin: 0 auto; }
+.uml-preview-fit { max-width: 100%; height: auto; }
+
+@media (max-width: 767px) {
+  .uml-code, .uml-preview { height: 65dvh; }
+}
