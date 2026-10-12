@@ -176,3 +176,69 @@ describe('interpretación', () => {
     expect(interpretModel(dfd).findings.some((finding) => finding.text.includes('«milagro»'))).toBe(true)
   })
 })
+
+describe('parsePlantUml · entidad-relación agrupado por dominios', () => {
+  const source = [
+    '@startuml',
+    'left to right direction',
+    'skinparam linetype ortho',
+    'package "Dominio 1: Acceso" {',
+    '  entity "USUARIOS" as usuarios {',
+    '    * id_usuario : bigint <<PK>>',
+    '    --',
+    '    * email : varchar(160) <<UNIQUE>>',
+    '  }',
+    '}',
+    'package "Dominio 3: Operación" {',
+    '  entity "COMPRAS" as compras {',
+    '    * id_compra : bigint <<PK>>',
+    '    --',
+    '    * id_usuario : bigint <<FK>>',
+    '    * id_producto : bigint <<FK>>',
+    '  }',
+    '  entity "EVENTOS" as eventos {',
+    '    * id_evento : bigint <<PK>>',
+    '  }',
+    '}',
+    'note left of eventos',
+    '  Sin llaves foráneas a propósito',
+    'end note',
+    'usuarios ||--|{ compras : "registra"',
+    '@enduml',
+  ].join('\n')
+
+  it('los paquetes son contenedores: no se convierten en entidades ni se quedan con sus atributos', () => {
+    const result = parsePlantUml(source, 'er', null)
+    const model = result.model as GraphModel
+    expect(result.warnings).toEqual([])
+    expect(names(model).filter((name) => !name.startsWith('note:'))).toEqual(['package:Dominio 1: Acceso', 'entity:USUARIOS', 'package:Dominio 3: Operación', 'entity:COMPRAS', 'entity:EVENTOS'])
+    const parents = containerMap('er', model.nodes)
+    const byName = (name: string) => model.nodes.find((node) => node.name === name)!
+    expect(parents.get(byName('USUARIOS').id)).toBe(byName('Dominio 1: Acceso').id)
+    expect(parents.get(byName('COMPRAS').id)).toBe(byName('Dominio 3: Operación').id)
+    expect(byName('USUARIOS').attributes).toEqual(['* id_usuario : bigint <<PK>>', '--', '* email : varchar(160) <<UNIQUE>>'])
+    const interpretation = interpretModel(model)
+    expect(interpretation.findings.filter((finding) => finding.level === 'warning')).toEqual([])
+    expect(interpretation.findings.map((finding) => finding.text).join(' ')).not.toMatch(/Dominio/)
+    expect(interpretation.summary.some((sentence) => /Dominio 3: Operación» agrupa «COMPRAS» y «EVENTOS»/.test(sentence))).toBe(true)
+  })
+
+  it('un «rectangle» con llaves también se lee como dominio, con aviso', () => {
+    const result = parsePlantUml(source.replace(/^package /gm, 'rectangle '), 'er', null)
+    expect(result.warnings[0]).toMatch(/se convirtió en «Paquete \(dominio\)»/)
+    expect(interpretModel(result.model).findings.some((finding) => finding.text.includes('no tiene clave primaria'))).toBe(false)
+  })
+
+  it('conserva los dominios separados al ir al lienzo y volver (aunque un dominio tenga una nota)', () => {
+    const first = parsePlantUml(source, 'er', null).model as GraphModel
+    const second = parsePlantUml(generatePlantUml(first), 'er', first).model as GraphModel
+    const fresh = parsePlantUml(generatePlantUml(first), 'er', null).model as GraphModel
+    for (const model of [second, fresh]) {
+      const parents = containerMap('er', model.nodes)
+      const packages = model.nodes.filter((node) => node.type === 'package')
+      expect(packages.map((node) => parents.get(node.id))).toEqual([null, null])
+      const usuarios = model.nodes.find((node) => node.name === 'USUARIOS')!
+      expect(parents.get(usuarios.id)).toBe(packages[0].id)
+    }
+  })
+})

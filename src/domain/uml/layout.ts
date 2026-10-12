@@ -18,18 +18,21 @@ export type Parents = Map<string, string | null>
  */
 export function autoLayout(input: GraphModel, parents: Parents, onlyIds?: Set<string>): GraphModel {
   const kind = input.kind
+  // Las notas se ubican al final, junto al elemento que comentan: no definen el
+  // tamaño de un contenedor (aún no tienen posición y lo estirarían al origen).
+  const hasContent = (id: string) => input.nodes.some((other) => parents.get(other.id) === id && other.type !== 'note')
   // Los contenedores vacíos sin tamaño elegido toman uno compacto.
   const model = {
     ...input,
     nodes: input.nodes.map((node) =>
-      nodeSpec(kind, node.type).container && node.width === undefined && !input.nodes.some((other) => parents.get(other.id) === node.id)
+      nodeSpec(kind, node.type).container && node.width === undefined && !hasContent(node.id)
         ? { ...node, width: 200, height: 110 }
         : node),
   }
   const isContainer = (node: GraphNode) => Boolean(nodeSpec(kind, node.type).container)
   const movable = (node: GraphNode) => !onlyIds || onlyIds.has(node.id)
   // Un contenedor vacío se ubica como un elemento más (si no, quedaría en el origen).
-  const hasChildren = (node: GraphNode) => model.nodes.some((other) => parents.get(other.id) === node.id)
+  const hasChildren = (node: GraphNode) => hasContent(node.id)
   const leaves = model.nodes.filter((node) => (!isContainer(node) || !hasChildren(node)) && node.type !== 'note' && movable(node))
   const leafIds = new Set(leaves.map((node) => node.id))
   const edges = model.edges.filter((edge) => leafIds.has(edge.source) && leafIds.has(edge.target) && edge.source !== edge.target)
@@ -147,7 +150,7 @@ export function autoLayout(input: GraphModel, parents: Parents, onlyIds?: Set<st
   }
   const containers = nodes.filter((node) => isContainer(node) && movable(node) && hasChildren(node)).sort((a, b) => depth(b.id) - depth(a.id))
   for (const container of containers) {
-    const children = nodes.filter((node) => parents.get(node.id) === container.id)
+    const children = nodes.filter((node) => parents.get(node.id) === container.id && node.type !== 'note')
     const boxes = children.map((child) => {
       const current = byId.get(child.id)!
       const size = isContainer(current) ? { width: current.width ?? 240, height: current.height ?? 140 } : sizes.get(child.id)!

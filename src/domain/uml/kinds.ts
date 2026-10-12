@@ -289,9 +289,11 @@ export const KIND_SPECS: KindSpec[] = [
     edges: [{ ...E.directed, label: 'Flujo de datos' }],
   },
   {
-    kind: 'er', syntax: 'class', directives: ['hide circle', 'skinparam linetype ortho'], defaultDirection: 'top-to-bottom', defaultEdge: 'er',
+    kind: 'er', syntax: 'class', directives: ['hide circle', 'skinparam linetype ortho'], defaultDirection: 'top-to-bottom', defaultEdge: 'er', containerHint: 'dominio o esquema',
     nodes: [
       { type: 'entity', label: 'Entidad (tabla)', icon: '▤', shape: 'classbox', keyword: 'entity', members: 'fields', defaultName: 'tabla', defaultMembers: { attributes: ['* id : uuid <<PK>>', '--', 'nombre : text'] } },
+      // Agrupa tablas por dominio o esquema; no es una entidad (no lleva clave primaria).
+      { ...packageContainer, label: 'Paquete (dominio)', defaultName: 'Dominio' },
       note,
     ],
     edges: [E.er],

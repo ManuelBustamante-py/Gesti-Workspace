@@ -53,7 +53,7 @@ const NODE_KINDS: Record<AnalyzedKind, Record<string, { kind: ElementKind; subty
     node: { kind: 'node' }, device: { kind: 'node', subtype: 'device' }, cloud: { kind: 'node', subtype: 'cloud' },
     artifact: { kind: 'artifact' }, component: { kind: 'component' }, database: { kind: 'datastore' }, actor: { kind: 'actor' },
   },
-  er: { entity: { kind: 'entity' } },
+  er: { entity: { kind: 'entity' }, package: { kind: 'package' } },
   sequence: {},
 }
 

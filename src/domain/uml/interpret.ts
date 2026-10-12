@@ -376,6 +376,7 @@ function interpretER(model: GraphModel): Interpretation {
       findings.push({ level: 'info', text: `${q(from.name)} y ${q(to.name)} tienen una relación de muchos a muchos: en una base relacional necesitará una tabla intermedia.` })
     }
   }
+  containmentSummary(model, summary)
   commonGraphChecks(model, findings)
   return { summary, findings }
 }
