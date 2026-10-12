@@ -149,8 +149,45 @@ export function autoLayout(input: GraphModel, parents: Parents, onlyIds?: Set<st
     return parent ? 1 + depth(parent) : 0
   }
   const containers = nodes.filter((node) => isContainer(node) && movable(node) && hasChildren(node)).sort((a, b) => depth(b.id) - depth(a.id))
+  const rectOf = (id: string) => {
+    const current = byId.get(id)!
+    const size = isContainer(current) ? { width: current.width ?? 240, height: current.height ?? 140 } : sizes.get(id)!
+    return { x: current.x, y: current.y, ...size }
+  }
+  const overlaps = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+  const descendants = (id: string) => nodes.filter((node) => {
+    let current = parents.get(node.id) ?? null
+    while (current) {
+      if (current === id) return true
+      current = parents.get(current) ?? null
+    }
+    return false
+  })
+  /**
+   * Un contenedor no debe tapar a sus hermanos (lo que tape quedaría «dentro» de él
+   * al leer el lienzo): se corre, con todo su contenido, más allá de ellos en el eje
+   * transversal. Al agrandarse un contenedor por esto, sus hermanos también se revisan.
+   */
+  const separate = (children: GraphNode[]) => {
+    const placed: string[] = children.filter((child) => !isContainer(child) || !hasChildren(child)).map((child) => child.id)
+    for (const nested of children.filter((child) => isContainer(child) && hasChildren(child) && movable(child))) {
+      const box = rectOf(nested.id)
+      if (placed.some((other) => overlaps(box, rectOf(other)))) {
+        const shift = horizontal
+          ? Math.max(...placed.map(rectOf).map((other) => other.y + other.height)) + NODE_GAP - box.y
+          : Math.max(...placed.map(rectOf).map((other) => other.x + other.width)) + NODE_GAP - box.x
+        for (const node of [nested, ...descendants(nested.id)]) {
+          const current = byId.get(node.id)!
+          byId.set(node.id, horizontal ? { ...current, y: snap(current.y + shift) } : { ...current, x: snap(current.x + shift) })
+        }
+      }
+      placed.push(nested.id)
+    }
+  }
   for (const container of containers) {
     const children = nodes.filter((node) => parents.get(node.id) === container.id && node.type !== 'note')
+    separate(children)
     const boxes = children.map((child) => {
       const current = byId.get(child.id)!
       const size = isContainer(current) ? { width: current.width ?? 240, height: current.height ?? 140 } : sizes.get(child.id)!
@@ -162,6 +199,7 @@ export function autoLayout(input: GraphModel, parents: Parents, onlyIds?: Set<st
     const maxY = Math.max(...boxes.map((box) => box.y + box.height)) + CONTAINER_PADDING
     byId.set(container.id, { ...container, x: snap(minX), y: snap(minY), width: snap(maxX - minX), height: snap(maxY - minY) })
   }
+  separate(nodes.filter((node) => !parents.get(node.id) && node.type !== 'note'))
 
   // Notas: a la derecha del elemento que comentan; las sueltas, al final.
   let looseY = 60

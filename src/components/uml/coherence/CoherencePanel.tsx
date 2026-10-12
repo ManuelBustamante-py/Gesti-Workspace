@@ -13,6 +13,7 @@ import { downloadMarkdown } from '../../../lib/diagramExport'
 interface CoherencePanelProps {
   boardId: string
   boardName: string
+  boardDescription?: string | null
   canEdit: boolean
   narrow: boolean
   listPath: string
@@ -36,12 +37,14 @@ const INTERPRETATION_SECTIONS: Array<[keyof GlobalInterpretation, string]> = [
  * hallazgos trazables, interpretación global, cobertura, equivalencias y
  * configuración de las reglas.
  */
-function CoherencePanel({ boardId, boardName, canEdit, narrow, listPath, userName }: CoherencePanelProps) {
+function CoherencePanel({ boardId, boardName, boardDescription, canEdit, narrow, listPath, userName }: CoherencePanelProps) {
   const review = useArchitectureReview(boardId, canEdit)
   const { report, settings } = review
   const [tab, setTab] = useState<Tab>('findings')
   const [filter, setFilter] = useState<FindingCategory | 'all'>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [pdfProgress, setPdfProgress] = useState('')
+  const [pdfError, setPdfError] = useState('')
 
   const visible = useMemo(() => (report?.findings ?? []).filter((finding) => filter === 'all' || finding.category === filter), [filter, report])
   const selected = visible.find((finding) => finding.id === selectedId) ?? visible.find((finding) => finding.category !== 'coherent') ?? visible[0] ?? null
@@ -61,6 +64,23 @@ function CoherencePanel({ boardId, boardName, canEdit, narrow, listPath, userNam
     )
   }
   if (!report) return null
+
+  async function downloadPdf() {
+    if (!report || !review.diagrams) return
+    setPdfError('')
+    try {
+      // Se carga solo al pedirlo: incluye jsPDF y el dibujo de cada diagrama.
+      const { downloadArchitectureReport } = await import('../../../lib/architectureReportDownload')
+      await downloadArchitectureReport(
+        { project: { name: boardName, description: boardDescription }, report, settings, diagrams: review.diagrams, author: userName },
+        setPdfProgress,
+      )
+    } catch (err) {
+      setPdfError(err instanceof Error ? `No se pudo generar el PDF: ${err.message}` : 'No se pudo generar el PDF.')
+    } finally {
+      setPdfProgress('')
+    }
+  }
 
   const openFinding = (id: string) => {
     setFilter('all')
@@ -115,12 +135,16 @@ function CoherencePanel({ boardId, boardName, canEdit, narrow, listPath, userNam
           <button type="button" className="btn-ghost px-3 py-1.5 text-sm" onClick={review.reload} disabled={review.loading}>
             {review.loading ? 'Analizando…' : '↻ Volver a analizar'}
           </button>
-          <button type="button" className="btn-ghost px-3 py-1.5 text-sm" onClick={() => downloadMarkdown(reportToMarkdown(report, boardName), diagramFileName(`coherencia ${boardName}`, 'md'))}>
-            ⤓ Descargar informe
+          <button type="button" className="btn-mint-primary px-3 py-1.5 text-sm font-semibold" onClick={() => void downloadPdf()} disabled={Boolean(pdfProgress)} title="Informe de diseño y coherencia arquitectónica, con portada, índice, hallazgos, plan de acción y los diagramas del proyecto">
+            {pdfProgress || '⤓ Informe PDF'}
+          </button>
+          <button type="button" className="btn-ghost px-3 py-1.5 text-sm" onClick={() => downloadMarkdown(reportToMarkdown(report, boardName), diagramFileName(`coherencia ${boardName}`, 'md'))} title="Texto estructurado, liviano para compartir o para analizarlo con otras herramientas">
+            ⤓ Markdown
           </button>
         </div>
       </header>
       {review.error && <p className="alert-error mt-3 rounded-lg p-2 text-xs" role="alert">{review.error}</p>}
+      {pdfError && <p className="alert-error mt-3 rounded-lg p-2 text-xs" role="alert">{pdfError}</p>}
       {review.saveError && <p className="alert-warning mt-3 rounded-lg p-2 text-xs" role="status">{review.saveError}</p>}
       {!review.settingsAvailable && !review.saveError && (
         <p className="alert-warning mt-3 rounded-lg p-2 text-xs" role="status">La configuración no se puede guardar todavía (falta la migración 20261012120000_board_architecture_settings.sql): los cambios solo duran esta sesión.</p>

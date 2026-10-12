@@ -69,5 +69,5 @@ export function useArchitectureReview(boardId: string | undefined, canEdit: bool
     [boardId, canEdit, settings, settingsAvailable],
   )
 
-  return { report, settings, settingsAvailable, loading, error, saveError, saving, loadedAt, reload, updateSettings }
+  return { report, diagrams, settings, settingsAvailable, loading, error, saveError, saving, loadedAt, reload, updateSettings }
 }

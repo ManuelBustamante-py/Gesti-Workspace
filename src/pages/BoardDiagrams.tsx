@@ -230,7 +230,7 @@ function BoardDiagrams() {
               </button>
             </nav>
             {view === 'coherence' ? (
-              <CoherencePanel boardId={board.id} boardName={board.name} canEdit={canEditContent} narrow={narrow} listPath={listPath} userName={displayName} />
+              <CoherencePanel boardId={board.id} boardName={board.name} boardDescription={board.description} canEdit={canEditContent} narrow={narrow} listPath={listPath} userName={displayName} />
             ) : (
               <section aria-label="Diagramas del tablero">
                 {listError && <p className="alert-error mb-4 rounded-lg p-3 text-sm" role="alert">{listError}</p>}

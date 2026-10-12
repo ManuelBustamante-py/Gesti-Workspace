@@ -262,3 +262,36 @@ describe('interpretModel · elementos dentro de contenedores conectados', () => 
     expect(isolated?.text).not.toContain('USUARIOS')
   })
 })
+
+describe('autoLayout · contenedores anidados junto a otros elementos', () => {
+  it('un nodo anidado no tapa a sus hermanos ni al contenedor vecino', () => {
+    const source = [
+      '@startuml',
+      'left to right direction',
+      'node Backend {',
+      '  artifact "backend/" as a',
+      '  component Alert',
+      '  component Adapter',
+      '  node "Motor ML" as ml {',
+      '    component predict',
+      '    component modelo',
+      '  }',
+      '}',
+      'node "Base de datos" as db {',
+      '  database BD',
+      '}',
+      'Alert --> Adapter',
+      'Adapter ..> predict',
+      'predict ..> modelo',
+      'Backend -- db',
+      '@enduml',
+    ].join('\n')
+    const model = graph(source, 'deployment')
+    const parents = containerMap('deployment', model.nodes)
+    const parentOf = (name: string) => model.nodes.find((node) => node.id === parents.get(model.nodes.find((item) => item.name === name)!.id))?.name ?? null
+    expect(['backend/', 'Alert', 'Adapter', 'Motor ML'].map(parentOf)).toEqual(['Backend', 'Backend', 'Backend', 'Backend'])
+    expect(['predict', 'modelo'].map(parentOf)).toEqual(['Motor ML', 'Motor ML'])
+    expect(parentOf('Base de datos')).toBeNull()
+    expect(parentOf('BD')).toBe('Base de datos')
+  })
+})
