@@ -14,6 +14,7 @@ import {
   type CommentKind,
   type TaskComment,
 } from '../../services/taskComments'
+import { confirmAction } from '../ui/ConfirmDialog'
 
 interface TaskCommentsProps {
   boardId: string
@@ -155,7 +156,7 @@ function TaskComments({ boardId, taskId, currentUserId, canComment, isBoardOwner
   }
 
   async function handleDelete(comment: TaskComment) {
-    if (!window.confirm('¿Eliminar este comentario y sus imágenes?')) return
+    if (!(await confirmAction('¿Eliminar este comentario y sus imágenes?', { danger: true }))) return
     try {
       await deleteTaskComment(comment)
       setComments((current) => current.filter((item) => item.id !== comment.id))

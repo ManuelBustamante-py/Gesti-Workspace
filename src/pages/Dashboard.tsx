@@ -73,6 +73,7 @@ import {
 import { getProfile, syncProfileFromAuthUser, type Profile } from '../services/profiles'
 import { getBoardTaskAssignees, setTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
 import { createTask, deleteTask, moveTask, setTaskStatusDate, updateTask, type Task, type TaskInput, type TaskStatusDateField } from '../services/tasks'
+import { confirmAction } from '../components/ui/ConfirmDialog'
 
 type View = 'boards' | 'create' | 'requests'
 type OpenTask = { id: string; mode: 'view' | 'edit' }
@@ -484,7 +485,7 @@ function Dashboard() {
   }
 
   async function handleDeleteBoard(board: Board) {
-    if (!window.confirm(`¿Eliminar el tablero «${board.name}» con todas sus columnas y tareas? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmAction(`¿Eliminar el tablero «${board.name}» con todas sus columnas y tareas? Esta acción no se puede deshacer.`, { danger: true }))) return
     try {
       setError('')
       await deleteBoard(board.id)
@@ -584,10 +585,10 @@ function Dashboard() {
     }
   }
 
-  function handleRemoveMember(member: BoardMember) {
+  async function handleRemoveMember(member: BoardMember) {
     const leaving = member.user_id === user?.id
     const name = member.profile?.display_name ?? member.profile?.username ?? 'este colaborador'
-    if (!window.confirm(leaving ? '¿Salir de este tablero? Perderás el acceso.' : `¿Quitar el acceso de ${name}?`)) return
+    if (!(await confirmAction(leaving ? '¿Salir de este tablero? Perderás el acceso.' : `¿Quitar el acceso de ${name}?`, { danger: true, confirmLabel: leaving ? 'Salir' : 'Quitar acceso', title: leaving ? 'Salir del tablero' : 'Quitar acceso' }))) return
     void runMemberAction(async () => {
       await removeBoardMember(member.id)
       if (leaving) {
@@ -642,7 +643,7 @@ function Dashboard() {
     const column = columns.find((item) => item.id === columnId)
     const taskCount = tasksByColumn[columnId]?.length ?? 0
     const warning = taskCount > 0 ? ` También se eliminarán sus ${taskCount} tarea(s).` : ''
-    if (!window.confirm(`¿Eliminar la columna «${column?.name ?? ''}»?${warning}`)) return
+    if (!(await confirmAction(`¿Eliminar la columna «${column?.name ?? ''}»?${warning}`, { danger: true }))) return
     try {
       setBoardError('')
       await deleteBoardColumn(columnId)
@@ -722,7 +723,7 @@ function Dashboard() {
   }, [setTasksByColumn, tasksByColumn])
 
   const handleDeleteTask = useCallback(async (task: Task) => {
-    if (!window.confirm(`¿Eliminar la tarea «${task.title}»?`)) return
+    if (!(await confirmAction(`¿Eliminar la tarea «${task.title}»?`, { danger: true }))) return
     try {
       setBoardError('')
       await deleteTask(task.id)

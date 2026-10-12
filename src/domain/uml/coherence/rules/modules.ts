@@ -6,7 +6,7 @@
  * su paquete corresponde al componente; no se exige que todas las clases
  * aparezcan en el diagrama de componentes.
  */
-import { listText, normalizeName, operationKey, quote } from '../names'
+import { listText, normalizeName, operationKey, quote, terms } from '../names'
 import { emptyOutcome, type RuleContext, type RuleSpec } from '../context'
 import type { ArchElement, ArchMessage, ArchRelation } from '../types'
 
@@ -55,10 +55,17 @@ const classComponentDependencies: RuleSpec = {
       entry.relations.push(relation)
       pairs.set(id, entry)
     }
+    let betweenTables = 0
     for (const pair of pairs.values()) {
       const relationText = listText(pair.relations.map((relation) => `${ctx.label(relation.source)} → ${ctx.label(relation.target)} (${relation.type})`))
       const fromElement = componentElement(ctx, pair.from)
       const toElement = componentElement(ctx, pair.to)
+      // Dos tablas de la misma base de datos: la relación es una clave foránea, no una
+      // dependencia entre componentes; se contrasta con el MER (regla structure.relations).
+      if (fromElement && toElement && isDataElement(ctx, fromElement) && isDataElement(ctx, toElement)) {
+        betweenTables += 1
+        continue
+      }
       const componentKeys = [fromElement?.key, toElement?.key].filter((key): key is string => Boolean(key))
       const forward = ctx.componentPath(pair.from, pair.to)
       if (forward) {
@@ -94,8 +101,23 @@ const classComponentDependencies: RuleSpec = {
         })
       }
     }
+    if (betweenTables) outcome.notes = [...(outcome.notes ?? []), `${betweenTables} relación(es) entre tablas de la base de datos se contrastan con el MER, no con dependencias entre componentes.`]
     return outcome
   },
+}
+
+const DATA_CONTAINER = /^(basedatos|bd|database|db|schema|esquema|postgresql|postgres|mysql|mariadb|oracle|sqlite|mongodb|sqlserver)$/
+
+/** Elemento de datos: un almacén, o algo contenido en un contenedor que representa una base de datos. */
+function isDataElement(ctx: RuleContext, element: ArchElement) {
+  if (element.kind === 'datastore') return true
+  let parent = element.parent
+  while (parent) {
+    const container = ctx.elements.get(parent)!
+    if (container.kind === 'datastore' || terms(container.name).some((term) => DATA_CONTAINER.test(term))) return true
+    parent = container.parent
+  }
+  return false
 }
 
 const interfaceKinds: RuleSpec = {

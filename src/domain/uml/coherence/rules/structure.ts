@@ -21,6 +21,25 @@ export function normalizeMultiplicity(value: string | undefined) {
   if (text === '0..1' || text === '1' || /^\d+(\.\.\d+)?$/.test(text)) return text === '1..1' ? '1' : text
   return text
 }
+/**
+ * Familia de un tipo, para comparar el modelo lógico con el físico. Un enum
+ * del diagrama de clases suele guardarse como texto (varchar). null: tipo
+ * desconocido (se compara literalmente).
+ */
+const TYPE_FAMILIES: Array<[RegExp, string]> = [
+  [/^(string|str|varchar|nvarchar|char|character|charactervarying|text|citext|clob)$/, 'texto'],
+  [/^(int|integer|smallint|bigint|long|short|tinyint|serial|bigserial|smallserial|int2|int4|int8)$/, 'entero'],
+  [/^(double|float|real|decimal|numeric|number|money|bigdecimal|doubleprecision|float4|float8)$/, 'decimal'],
+  [/^(bool|boolean)$/, 'booleano'],
+  [/^(date|datetime|timestamp|timestamptz|timestampwithtimezone|localdate|localdatetime|instant|zoneddatetime|time|timetz)$/, 'fecha'],
+  [/^(uuid|guid)$/, 'uuid'],
+]
+export function typeFamily(type: string, enumNames: Set<string> = new Set()) {
+  const base = typeKey(type).replace(/\(.*\)$/, '').replace(/\[\]$/, '')
+  if (enumNames.has(base) || /^enum/.test(base)) return 'texto'
+  return TYPE_FAMILIES.find(([pattern]) => pattern.test(base))?.[1] ?? null
+}
+
 const upper = (value: string) => (value.endsWith('*') ? Infinity : Number(value.split('..').pop()))
 
 type End = { relation: ArchRelation; atA: string | null; atB: string | null }
@@ -138,6 +157,7 @@ const membersRule: RuleSpec = {
   precondition: enoughDiagrams,
   run(ctx) {
     const outcome = emptyOutcome()
+    const enumNames = new Set(ctx.model.elements.filter((element) => element.kind === 'enum').map((element) => typeKey(element.name)))
     for (const concept of ctx.concepts) {
       if (concept.ambiguous) continue
       const members = concept.members.map((key) => ctx.elements.get(key)!).filter((element) => (STRUCTURAL_KINDS as readonly string[]).includes(ctx.diagrams.get(element.diagramId)!.kind))
@@ -157,9 +177,15 @@ const membersRule: RuleSpec = {
           outcome.passed.push({ text: `El atributo «${name}» de ${quote(concept.label)} tiene el mismo tipo en todos los diagramas.`, elements: items.map((item) => item.owner) })
           continue
         }
+        // Tipo lógico (clases) y físico (MER) de la misma familia: String ↔ varchar(120), double ↔ numeric(10,2).
+        const families = new Set(items.map((item) => typeFamily(item.type, enumNames)))
+        if (families.size === 1 && !families.has(null)) {
+          outcome.passed.push({ text: `El atributo «${name}» de ${quote(concept.label)} tiene tipos compatibles (${listText([...new Set(items.map((item) => quote(item.type)))])}).`, elements: items.map((item) => item.owner) })
+          continue
+        }
         outcome.findings.push({
           category: 'possible', type: 'attribute-type-conflict', severity: 'low', confidence: concept.confidence * 0.9,
-          title: `El atributo «${name}» de ${quote(concept.label)} tiene tipos distintos`,
+          title: `El atributo «${name}» de ${quote(concept.label)} tiene tipos incompatibles`,
           description: listText(items.map((item) => `${quote(item.type)} en «${ctx.diagramOf(item.owner).name}»`)),
           elements: items.map((item) => item.owner),
           evidence: items.map((item) => ctx.evidence(ctx.diagramOf(item.owner).id, `${ctx.label(item.owner)}.${name}: ${item.type}`, [item.owner])),

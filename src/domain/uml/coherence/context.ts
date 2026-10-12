@@ -222,6 +222,14 @@ export function createContext(model: ArchitectureModel, concepts: Concept[], cor
         add(to, from, relation)
       }
     }
+    // Depender de un contenedor (la base de datos, un paquete) alcanza lo que contiene.
+    for (const element of model.elements) {
+      if (!element.parent || kindOf(element.key) !== 'component') continue
+      const parent = elements.get(element.parent)!
+      add(conceptOfKey.get(parent.key)!.id, conceptOfKey.get(element.key)!.id, {
+        key: parent.key, diagramId: element.diagramId, elementId: parent.elementId, type: 'dependency', source: parent.key, target: element.key, directed: true, label: 'contiene',
+      })
+    }
     return edges
   })()
 

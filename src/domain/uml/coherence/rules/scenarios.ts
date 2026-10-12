@@ -5,7 +5,7 @@
  * clase propia: la falta de escenario o de soporte estructural se informa como
  * no verificable u omisión, nunca como contradicción.
  */
-import { ACTION_TERMS, ROLE_TERMS, domainTerms, listText, quote, sameTermSet, subjectTerms, terms } from '../names'
+import { ACTION_TERMS, ROLE_TERMS, baseName, domainTerms, listText, quote, sameTermSet, splitQualifier, subjectTerms, terms } from '../names'
 import { emptyOutcome, type RuleContext, type RuleSpec } from '../context'
 import type { ArchDiagram, ArchElement, ArchMessage } from '../types'
 
@@ -13,11 +13,30 @@ export type ScenarioLink = { sequence: ArchDiagram; useCase: ArchElement; score:
 
 const contains = (haystack: string[], needles: string[]) => needles.length > 0 && needles.every((term) => haystack.includes(term))
 
-/** Pasos de un escenario que nombran un caso de uso (por el texto del mensaje o el nombre de la llamada). */
+const CODE_PREFIX = /^\s*(?:CU|UC)[-\s_]?0*(\d+)\s*[:.\-–—]?\s*/i
+
+/** Código de un caso de uso escrito como prefijo del nombre: «CU-03: Consultar…» → «3». */
+export function caseCode(name: string) {
+  return CODE_PREFIX.exec(baseName(name))?.[1] ?? null
+}
+
+/** Códigos de caso de uso citados en un texto: «Consulta (CU-03, CU-08)» → {3, 8}. */
+export function citedCodes(text: string) {
+  return new Set([...text.matchAll(/\b(?:CU|UC)[-\s_]?0*(\d+)\b/gi)].map((match) => match[1]))
+}
+
+/** Términos del nombre de un caso de uso sin su código ni sus aclaraciones entre paréntesis. */
+export function caseTerms(name: string) {
+  return terms(splitQualifier(baseName(name).replace(CODE_PREFIX, '')).core)
+}
+
+/** Pasos de un escenario que nombran un caso de uso (por el texto del mensaje, el nombre de la llamada o su código). */
 export function stepsNaming(messages: ArchMessage[], name: string) {
-  const wanted = terms(name)
+  const wanted = caseTerms(name)
+  const code = caseCode(name)
   return messages.filter((message) => {
     if (message.type === 'reply') return false
+    if (code && citedCodes(message.label).has(code)) return true
     const said = terms(message.call?.name ?? message.label)
     return sameTermSet(said, wanted) || contains(terms(message.label), wanted)
   })
@@ -33,11 +52,22 @@ export function scenarioLinks(ctx: RuleContext) {
   const links: ScenarioLink[] = []
   const ambiguous: Array<{ sequence: ArchDiagram; candidates: ArchElement[] }> = []
   for (const sequence of ctx.diagramsOfKind('sequence')) {
-    const titles = [sequence.name, sequence.title ?? ''].map(subjectTerms).filter((value) => value.length)
+    const titleText = [sequence.name, sequence.title ?? '']
+    const cited = citedCodes(titleText.join(' '))
+    const titles = titleText.map((text) => subjectTerms(splitQualifier(text).core)).filter((value) => value.length)
     const messages = ctx.messagesOf(sequence)
+    // Un escenario que cita códigos de caso de uso («(CU-03, CU-08)») los realiza todos: no hay ambigüedad.
+    const byCode = useCases.filter((useCase) => {
+      const code = caseCode(useCase.name)
+      return code !== null && cited.has(code)
+    })
+    if (byCode.length) {
+      for (const useCase of byCode) links.push({ sequence, useCase, score: 0.9, basis: `el escenario cita ${quote(`CU-${caseCode(useCase.name)!.padStart(2, '0')}`)}` })
+      continue
+    }
     const scored = useCases
       .map((useCase) => {
-        const wanted = terms(useCase.name)
+        const wanted = caseTerms(useCase.name)
         if (titles.some((title) => sameTermSet(title, wanted))) return { useCase, score: 0.85, basis: `el nombre del escenario coincide con ${quote(useCase.name)}` }
         if (titles.some((title) => contains(title, wanted) && title.length <= wanted.length + 2)) return { useCase, score: 0.75, basis: `el nombre del escenario incluye ${quote(useCase.name)}` }
         const step = stepsNaming(messages, useCase.name).find((message) => ctx.elements.get(message.from)?.kind === 'actor')
@@ -239,6 +269,11 @@ const flowRule: RuleSpec = {
       for (const relation of relations.filter((item) => item.type === 'include' && item.source === link.useCase.key)) {
         const included = ctx.elements.get(relation.target)!
         const steps = stepsNaming(messages, included.name)
+        const alsoRealized = links.some((other) => other.sequence.id === link.sequence.id && other.useCase.key === included.key)
+        if (!steps.length && alsoRealized) {
+          outcome.passed.push({ text: `El caso incluido ${ctx.label(included.key)} también se realiza en «${link.sequence.name}».`, elements: [relation.key] })
+          continue
+        }
         if (!steps.length) {
           outcome.findings.push({
             category: 'omission', type: 'include-not-shown', severity: 'low', confidence: link.score,
@@ -312,11 +347,11 @@ const structuralSupport: RuleSpec = {
     const unsupported: ArchElement[] = []
     const seen = new Set<string>()
     for (const useCase of ctx.elementsIn(['usecase'], 'usecase')) {
-      const wanted = terms(useCase.name)
+      const wanted = caseTerms(useCase.name)
       const id = wanted.join(' ')
       if (seen.has(id)) continue
       seen.add(id)
-      const nouns = domainTerms(useCase.name).filter((term) => !ACTION_TERMS.has(term) && !ROLE_TERMS.has(term))
+      const nouns = domainTerms(splitQualifier(baseName(useCase.name).replace(CODE_PREFIX, '')).core).filter((term) => !ACTION_TERMS.has(term) && !ROLE_TERMS.has(term))
       const operation = classes.flatMap((item) => item.operations.map((op) => ({ op, owner: item }))).find(({ op }) => sameTermSet(terms(op.name), wanted) || contains(terms(op.name), wanted))
       if (operation) {
         outcome.passed.push({ text: `${ctx.label(useCase.key)} tiene la operación «${operation.op.name}» en ${ctx.where(operation.owner.key)}.`, elements: [useCase.key, operation.owner.key] })

@@ -128,7 +128,8 @@ export function parseOperation(line: string): Operation | null {
 function parseAttribute(line: string): Attribute | null {
   const raw = line.trim()
   if (!raw || /^(--|==|\.\.|__)/.test(raw)) return null
-  const text = raw.replace(/^[-+#~*]\s*/, '').replace(/\{[^}]*\}\s*/g, '').replace(/<<[^>]*>>/g, '').trim()
+  // «estado : varchar(10) ' {activa | atendida}»: lo que sigue a ' es un comentario, no parte del tipo.
+  const text = raw.replace(/\s+'.*$/, '').replace(/^[-+#~*]\s*/, '').replace(/\{[^}]*\}\s*/g, '').replace(/<<[^>]*>>/g, '').trim()
   if (text.includes(':')) {
     const [name, ...type] = text.split(':')
     return { name: name.trim(), type: type.join(':').trim() || undefined, raw }

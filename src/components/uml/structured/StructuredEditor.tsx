@@ -21,6 +21,7 @@ import { downloadDiagramReport } from '../../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
 import { applyPatch } from '../../../domain/uml/liveSync'
 import type { LiveConnection } from '../live'
+import { confirmAction } from '../../ui/ConfirmDialog'
 
 interface StructuredEditorProps {
   diagram: Diagram
@@ -130,7 +131,7 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
   }
 
   async function handleDelete() {
-    if (!window.confirm(`¿Eliminar el diagrama «${diagram.name}»? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmAction(`¿Eliminar el diagrama «${diagram.name}»? Esta acción no se puede deshacer.`, { danger: true }))) return
     try {
       await deleteDiagram(diagram.id)
       onDeleted()
@@ -139,8 +140,8 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
     }
   }
 
-  function handleBack() {
-    if (dirty && !window.confirm('Hay cambios sin guardar. ¿Salir sin guardar?')) return
+  async function handleBack() {
+    if (dirty && !(await confirmAction('Hay cambios sin guardar. ¿Salir sin guardar?', { title: 'Cambios sin guardar', confirmLabel: 'Salir sin guardar', danger: true }))) return
     onBack()
   }
 

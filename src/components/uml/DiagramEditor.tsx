@@ -15,6 +15,7 @@ import { isVisualKind, modelFromDiagram } from '../../domain/uml/visualModel'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../lib/diagramExport'
 import { downloadDiagramReport } from '../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../services/diagrams'
+import { confirmAction } from '../ui/ConfirmDialog'
 
 interface DiagramEditorProps {
   diagram: Diagram
@@ -104,7 +105,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
         ...result.warnings,
         ...(result.kept.length ? [`${result.kept.length} línea(s) que el lienzo no dibuja se conservan como PlantUML adicional (p. ej. «${result.kept[0]}»).`] : []),
       ]
-      if (notes.length && !window.confirm(`Al pasar al lienzo:\n\n• ${notes.slice(0, 6).join('\n• ')}\n\n¿Continuar?`)) return
+      if (notes.length && !(await confirmAction(`Al pasar al lienzo:\n\n• ${notes.slice(0, 6).join('\n• ')}\n\n¿Continuar?`, { title: 'Pasar al lienzo' }))) return
       const saved = await updateDiagram(
         diagram.id,
         { name: name.trim() !== diagram.name ? name : undefined, mode: 'visual', model: result.model, source: generatePlantUml(result.model) },
@@ -200,7 +201,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
   }
 
   async function handleDelete() {
-    if (!window.confirm(`¿Eliminar el diagrama «${diagram.name}»? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmAction(`¿Eliminar el diagrama «${diagram.name}»? Esta acción no se puede deshacer.`, { danger: true }))) return
     try {
       await deleteDiagram(diagram.id)
       onDeleted()
@@ -209,8 +210,8 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
     }
   }
 
-  function handleBack() {
-    if (dirty && !window.confirm('Hay cambios sin guardar. ¿Salir sin guardar?')) return
+  async function handleBack() {
+    if (dirty && !(await confirmAction('Hay cambios sin guardar. ¿Salir sin guardar?', { title: 'Cambios sin guardar', confirmLabel: 'Salir sin guardar', danger: true }))) return
     onBack()
   }
 

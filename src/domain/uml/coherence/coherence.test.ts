@@ -399,3 +399,40 @@ describe('correspondencias · texto entre paréntesis', () => {
     expect(pending.some((pair) => pair.includes('Alert') && pair.includes('Transaction'))).toBe(false)
   })
 })
+
+describe('falsos positivos entre vistas lógica y física', () => {
+  it('tipos lógicos y físicos de la misma familia son compatibles; los comentarios en línea no son parte del tipo', () => {
+    const cls = code('c1', 'class', 'Clases', 'class Producto {', '  - nombre: String', '  - stock: double', '  - activo: boolean', '  - creado: Date', '}')
+    const er = code('e1', 'er', 'MER', 'entity "PRODUCTOS" as p {', '  * id : bigint <<PK>>', '  --', "  * nombre : varchar(120) ' nombre comercial", '  * stock : numeric(10,2)', '  * activo : varchar(5)', '  * creado : timestamptz', '}')
+    const conflicts = evaluateArchitecture([cls, er]).findings.filter((item) => item.type === 'attribute-type-conflict')
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0].title).toMatch(/activo/)
+    expect(conflicts[0].description).toBe('«boolean» en «Clases» y «varchar(5)» en «MER»')
+  })
+
+  it('las relaciones entre tablas no exigen dependencias entre componentes y depender de la base cubre sus tablas', () => {
+    const cls = code('c1', 'class', 'Clases', 'class MotorService', 'class Producto', 'class Venta', 'Venta --> Producto', 'MotorService --> Producto')
+    const cmp = code('k1', 'component', 'Componentes', 'component MotorService as m', 'package "Base de datos" as bd {', '  component "VENTAS" as v', '  component "PRODUCTOS" as p', '}', 'm --> bd')
+    const report = evaluateArchitecture([cls, cmp])
+    expect(types(report)).not.toContain('dependency-undeclared')
+    expect(types(report)).not.toContain('dependency-reversed')
+  })
+})
+
+describe('casos de uso citados por código', () => {
+  const uc = code('u1', 'usecase', 'Casos de uso', 'actor Dueno', 'usecase "CU-03: Consultar Dashboard" as CU03', 'usecase "CU-09: Evaluar Semáforo (riesgo)" as CU09', 'usecase "CU-04: Gestionar Catálogo" as CU04', 'Dueno -- CU03', 'Dueno -- CU04', 'CU03 ..> CU09 : <<include>>')
+  const seq = code('q1', 'sequence', 'Secuencia 1', 'title Secuencia 1: Consulta (CU-03, CU-09)', 'actor Dueno', 'participant App', 'Dueno -> App : abrir()', 'App -> App : calcular colores')
+  const report = evaluateArchitecture([uc, seq])
+
+  it('enlaza el escenario con todos los casos que cita su título, sin ambigüedad', () => {
+    expect(types(report)).not.toContain('scenario-without-usecase')
+    expect(types(report)).not.toContain('scenario-ambiguous')
+    const without = report.findings.find((item) => item.type === 'usecase-without-scenario')!
+    expect(without.title).toMatch(/^1 caso/)
+    expect(without.description).toContain('CU-04')
+  })
+
+  it('un caso incluido que el mismo escenario realiza cuenta como mostrado', () => {
+    expect(types(report)).not.toContain('include-not-shown')
+  })
+})
