@@ -7,7 +7,7 @@
  * base, evidencia y confianza. Solo los enlaces seguros (o confirmados por la
  * persona) forman conceptos; el resto queda como hipótesis por validar.
  */
-import { ROLE_TERMS, domainTerms, jaccard, listText, normalizeName, quote, sameTermSet, terms } from './names'
+import { ROLE_TERMS, domainTerms, jaccard, listText, normalizeName, quote, sameTermSet, splitQualifier, terms } from './names'
 import type { ArchElement, ArchitectureModel, ArchitectureSettings, Concept, Correspondence, ElementKind } from './types'
 
 /** Confianza mínima para que una correspondencia automática se use en las reglas. */
@@ -38,13 +38,20 @@ function propose(a: ArchElement, b: ArchElement): Omit<Correspondence, 'status'>
   const nameB = normalizeName(b.name)
   if (!nameA || !nameB) return null
   if (nameA === nameB) return { a: a.key, b: b.key, basis: 'same-name', confidence: 0.9, evidence: `Mismo nombre (${quote(a.name)}) y tipos compatibles (${a.kind} / ${b.kind}).` }
-  const termsA = terms(a.name)
-  const termsB = terms(b.name)
+  // El texto entre paréntesis es un detalle (tecnología, descripción): se compara el nombre base.
+  const partsA = splitQualifier(a.name)
+  const partsB = splitQualifier(b.name)
+  const termsA = terms(partsA.core)
+  const termsB = terms(partsB.core)
   if (sameTermSet(termsA, termsB)) {
-    return { a: a.key, b: b.key, basis: 'equivalent-terms', confidence: 0.8, evidence: `${quote(a.name)} y ${quote(b.name)} usan los mismos términos normalizados (${listText([...new Set(termsA)])}).` }
+    if (partsA.qualifier && partsB.qualifier && partsA.qualifier !== partsB.qualifier) {
+      return { a: a.key, b: b.key, basis: 'partial', confidence: 0.6, evidence: `Mismo nombre base (${quote(partsA.core)}), pero con detalles distintos entre paréntesis: confirma si es el mismo elemento.` }
+    }
+    const detail = partsA.qualifier || partsB.qualifier ? '; el texto entre paréntesis se toma como un detalle' : ''
+    return { a: a.key, b: b.key, basis: 'equivalent-terms', confidence: 0.8, evidence: `${quote(a.name)} y ${quote(b.name)} usan los mismos términos normalizados (${listText([...new Set(termsA)])})${detail}.` }
   }
-  const domainA = domainTerms(a.name)
-  const domainB = domainTerms(b.name)
+  const domainA = domainTerms(partsA.core)
+  const domainB = domainTerms(partsB.core)
   if ((GROUPING.has(a.kind) || GROUPING.has(b.kind)) && sameTermSet(domainA, domainB)) {
     return { a: a.key, b: b.key, basis: 'role-variant', confidence: 0.55, evidence: `Comparten el término de dominio ${listText(domainA.map(quote))} y difieren solo en el rol técnico.` }
   }

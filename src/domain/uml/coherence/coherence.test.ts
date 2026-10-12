@@ -384,3 +384,18 @@ describe('reportToMarkdown · 10. informe a partir de hallazgos reales', () => {
     for (const finding of report.findings) expect(markdown).toContain(finding.id)
   })
 })
+
+describe('correspondencias · texto entre paréntesis', () => {
+  const names = (report: ArchitectureReport, status: string) =>
+    report.correspondences.filter((item) => item.status === status).map((item) => [item.a, item.b].map((key) => report.model.elements.find((element) => element.key === key)!.name).join(' ≈ '))
+
+  it('el detalle entre paréntesis no impide reconocer el mismo elemento ni genera parecidos falsos', () => {
+    const cmp = code('k1', 'component', 'Componentes', 'component "Alert Controller" as a', 'component "Transaction Controller (ventas y compras)" as t', 'component "Auth Controller (JWT)" as u', 'a --> t')
+    const seq = code('q1', 'sequence', 'S', 'participant "AlertController (Express)" as a', 'participant "TransactionController (Express)" as t', 'participant "AuthController (Express)" as u', 'a -> t : x()', 't -> u : y()')
+    const report = evaluateArchitecture([cmp, seq])
+    expect(names(report, 'auto')).toEqual(['Alert Controller ≈ AlertController (Express)'])
+    const pending = names(report, 'hypothesis')
+    expect(pending).toEqual(expect.arrayContaining(['Transaction Controller (ventas y compras) ≈ TransactionController (Express)', 'Auth Controller (JWT) ≈ AuthController (Express)']))
+    expect(pending.some((pair) => pair.includes('Alert') && pair.includes('Transaction'))).toBe(false)
+  })
+})

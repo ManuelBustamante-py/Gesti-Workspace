@@ -55,7 +55,15 @@ function commonGraphChecks(model: GraphModel, findings: Finding[]) {
   for (const [key, count] of seen) {
     if (count > 1) findings.push({ level: 'warning', text: `${q(key.split('|')[1])} aparece ${count} veces como ${spec({ type: key.split('|')[0] } as GraphNode).label.toLowerCase()}: ¿es el mismo elemento repetido?` })
   }
-  const isolated = elements.filter((node) => edgesOf(node.id).length === 0)
+  // Un elemento dentro de un contenedor con relaciones (p. ej. una tabla dentro de
+  // la base de datos a la que se conectan los servicios) no está aislado.
+  const parents = containerMap(model.kind, model.nodes)
+  const connected = (id: string): boolean => {
+    if (edgesOf(id).length) return true
+    const parent = parents.get(id)
+    return parent ? connected(parent) : false
+  }
+  const isolated = elements.filter((node) => !connected(node.id))
   if (isolated.length && elements.length > 1) {
     findings.push({ level: 'info', text: `Sin relaciones: ${list(isolated.map((node) => q(node.name)))}. Si son parte del diagrama, conéctalos; si no, quizá sobran.` })
   }

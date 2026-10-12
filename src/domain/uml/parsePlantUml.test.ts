@@ -242,3 +242,23 @@ describe('parsePlantUml · entidad-relación agrupado por dominios', () => {
     }
   })
 })
+
+describe('interpretModel · elementos dentro de contenedores conectados', () => {
+  it('una tabla dentro de la base de datos a la que se conecta un servicio no se marca como aislada', () => {
+    const model = graph([
+      '@startuml',
+      'component API',
+      'node Servidor {',
+      '  package "Base de datos" as bd {',
+      '    component USUARIOS',
+      '  }',
+      '}',
+      'component Huerfano',
+      'API --> bd : SQL',
+      '@enduml',
+    ].join('\n'), 'component')
+    const isolated = interpretModel(model).findings.find((finding) => finding.text.startsWith('Sin relaciones'))
+    expect(isolated?.text).toContain('«Huerfano»')
+    expect(isolated?.text).not.toContain('USUARIOS')
+  })
+})

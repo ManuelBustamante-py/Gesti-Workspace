@@ -61,6 +61,17 @@ export function baseName(name: string) {
     .trim()
 }
 
+/**
+ * Separa el detalle entre paréntesis (tecnología, descripción) del nombre:
+ * «AlertController (Express)» → «AlertController» + «express».
+ */
+export function splitQualifier(name: string) {
+  const base = baseName(name)
+  const qualifiers = [...base.matchAll(/\(([^)]*)\)/g)].map((match) => match[1])
+  const core = base.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+  return { core: core || base, qualifier: stripAccents(qualifiers.join(' ')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() }
+}
+
 /** Forma comparable de un nombre completo: «Base de Datos» → «base de datos». */
 export function normalizeName(name: string) {
   return stripAccents(baseName(name)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
