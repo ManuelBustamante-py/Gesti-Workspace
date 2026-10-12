@@ -37,6 +37,8 @@ interface VisualEditorProps {
   onBack: () => void
   /** Colaboración en vivo (opcional): cambios entrantes y salientes, y presencia. */
   live?: LiveConnection
+  /** Elemento seleccionado al abrir (p. ej. desde un hallazgo de coherencia). */
+  focus?: Selection
 }
 
 const PARTICIPANT_ICONS: Record<ParticipantType, string> = {
@@ -49,14 +51,14 @@ const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 
 /** Editor de arrastrar y soltar para los diagramas de grafo y de secuencia. Genera el PlantUML. */
-function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, live }: VisualEditorProps) {
+function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, live, focus = null }: VisualEditorProps) {
   const savedModel = useMemo(() => modelFromDiagram(diagram.kind, diagram.model) as CanvasModel, [diagram])
   const savedJson = useMemo(() => JSON.stringify(savedModel), [savedModel])
   const history = useHistory<CanvasModel>(savedModel)
   const { state: model, set: setModel, undo, redo, checkpoint } = history
   const spec = model.kind === 'sequence' ? null : kindSpec(model.kind)
   const [name, setName] = useState(diagram.name)
-  const [selection, setSelection] = useState<Selection>(null)
+  const [selection, setSelection] = useState<Selection>(focus)
   const [edgeType, setEdgeType] = useState(spec?.defaultEdge ?? 'association')
   const [messageType, setMessageType] = useState<MessageType>('sync')
   const [sequenceZoom, setSequenceZoom] = useState(1)

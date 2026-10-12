@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import { useIsNarrow } from '../hooks/useLayout'
+import CoherencePanel from '../components/uml/coherence/CoherencePanel'
 import DiagramEditor from '../components/uml/DiagramEditor'
 import StructuredEditor from '../components/uml/structured/StructuredEditor'
 import VisualEditor from '../components/uml/visual/VisualEditor'
+import type { Selection } from '../components/uml/visual/GraphCanvas'
 import { useDiagramLive } from '../hooks/useDiagramLive'
 import { isStructuredKind } from '../domain/uml/structured'
 import NewDiagramModal, { type NewDiagramValues } from '../components/uml/NewDiagramModal'
@@ -22,6 +24,8 @@ type WorkspaceProps = {
   narrow: boolean
   userId: string
   userName: string
+  /** Elemento a seleccionar al abrir (desde un hallazgo de coherencia). */
+  focus: Selection
   onSaved: (diagram: Diagram) => void
   onDeleted: () => void
   onBack: () => void
@@ -31,7 +35,7 @@ type WorkspaceProps = {
  * Diagrama abierto: se conecta al canal en vivo y elige el editor según el modo
  * (código o visual) y el tipo (lienzo o editor estructurado).
  */
-function DiagramWorkspace({ diagram, canEdit, narrow, userId, userName, onSaved, onDeleted, onBack }: WorkspaceProps) {
+function DiagramWorkspace({ diagram, canEdit, narrow, userId, userName, focus, onSaved, onDeleted, onBack }: WorkspaceProps) {
   const live = useDiagramLive({ diagram, userId, userName, canEdit })
   // Lo que otro colaborador guarda pasa a ser la versión base (sin falsos conflictos al guardar).
   useEffect(() => {
@@ -41,7 +45,14 @@ function DiagramWorkspace({ diagram, canEdit, narrow, userId, userName, onSaved,
   const common = { diagram, canEdit, narrow, onSaved, onDeleted, onBack, live }
   if (diagram.mode !== 'visual') return <DiagramEditor key={`${diagram.id}-code`} {...common} />
   if (isStructuredKind(diagram.kind)) return <StructuredEditor key={`${diagram.id}-structured`} {...common} />
-  return <VisualEditor key={`${diagram.id}-visual`} {...common} />
+  return <VisualEditor key={`${diagram.id}-visual`} {...common} focus={focus} />
+}
+
+const FOCUS_KINDS = ['node', 'edge', 'participant', 'message'] as const
+/** «node:n3» → selección inicial del editor visual. */
+function parseFocus(value: string | null): Selection {
+  const [kind, id] = value?.split(':') ?? []
+  return id && (FOCUS_KINDS as readonly string[]).includes(kind) ? { kind: kind as (typeof FOCUS_KINDS)[number], id } : null
 }
 
 const editedAt = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -57,6 +68,10 @@ function BoardDiagrams() {
   const { user } = useAuth()
   const narrow = useIsNarrow()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('vista') === 'coherencia' ? 'coherence' : 'gallery'
+  const fromCoherence = searchParams.get('desde') === 'coherencia'
+  const focus = parseFocus(searchParams.get('foco'))
 
   const [board, setBoard] = useState<Board | null>(null)
   const [members, setMembers] = useState<BoardMember[]>([])
@@ -170,7 +185,7 @@ function BoardDiagrams() {
             </div>
             <p className="mt-2 text-sm text-slate-400">Diagramas UML, de arquitectura y de procesos del proyecto</p>
           </div>
-          {!diagramId && canEditContent && (
+          {!diagramId && canEditContent && view === 'gallery' && (
             <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
               ＋ Añadir diagrama
             </button>
@@ -192,7 +207,8 @@ function BoardDiagrams() {
                   setCurrent(null)
                   navigate(listPath)
                 }}
-                onBack={() => navigate(listPath)}
+                focus={focus}
+                onBack={() => navigate(fromCoherence ? `${listPath}?vista=coherencia` : listPath)}
               />
             </section>
           ) : currentError ? (
@@ -204,50 +220,64 @@ function BoardDiagrams() {
             <p className="text-slate-400">Abriendo diagrama…</p>
           )
         ) : (
-          <section aria-label="Diagramas del tablero">
-            {listError && <p className="alert-error mb-4 rounded-lg p-3 text-sm" role="alert">{listError}</p>}
-            {loadingList ? (
-              <p className="text-slate-400">Cargando diagramas…</p>
-            ) : diagrams.length === 0 ? (
-              <div className="glass-panel rounded-2xl p-8 text-center">
-                <p className="text-3xl" aria-hidden="true">◇</p>
-                <h2 className="mt-2 text-lg font-semibold text-white">Este tablero aún no tiene diagramas</h2>
-                <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
-                  Diseña clases, casos de uso, secuencias, arquitectura, procesos y más, todo asociado a este proyecto.
-                  Se dibujan con PlantUML directamente en tu navegador.
-                </p>
-                {canEditContent ? (
-                  <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary mt-5 px-4 py-2 text-sm font-semibold">
-                    ＋ Añadir el primer diagrama
-                  </button>
-                ) : (
-                  <p className="mt-4 text-sm text-slate-500">Tu rol es de lector: el propietario o un editor puede crearlos.</p>
-                )}
-              </div>
+          <>
+            <nav className="arch-tabs mb-4" role="tablist" aria-label="Vistas de diagramas">
+              <button type="button" role="tab" aria-selected={view === 'gallery'} className={`arch-tab ${view === 'gallery' ? 'arch-tab-active' : ''}`} onClick={() => setSearchParams({})}>
+                ◇ Diagramas
+              </button>
+              <button type="button" role="tab" aria-selected={view === 'coherence'} className={`arch-tab ${view === 'coherence' ? 'arch-tab-active' : ''}`} onClick={() => setSearchParams({ vista: 'coherencia' })}>
+                ⚖ Coherencia arquitectónica
+              </button>
+            </nav>
+            {view === 'coherence' ? (
+              <CoherencePanel boardId={board.id} boardName={board.name} canEdit={canEditContent} narrow={narrow} listPath={listPath} userName={displayName} />
             ) : (
-              <ul className="uml-gallery">
-                {diagrams.map((diagram) => {
-                  const type = umlDiagramType(diagram.kind)
-                  const category = UML_CATEGORIES.find((item) => item.id === type?.category)
-                  return (
-                    <li key={diagram.id}>
-                      <Link to={`${listPath}/${diagram.id}`} className="uml-card glass-panel">
-                        <span className="uml-card-icon" aria-hidden="true">{categoryIcons[type?.category ?? 'uml']}</span>
-                        <span className="min-w-0">
-                          <span className="uml-card-name">{diagram.name}</span>
-                          <span className="uml-card-type">{type?.name ?? diagram.kind}</span>
-                          <span className="uml-card-meta">
-                            {diagram.mode === 'code' ? '⌨ Código' : '✥ Visual'} · {editedAt.format(new Date(diagram.updated_at))}
-                          </span>
-                        </span>
-                        <span className="sr-only">{category?.name}</span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
+              <section aria-label="Diagramas del tablero">
+                {listError && <p className="alert-error mb-4 rounded-lg p-3 text-sm" role="alert">{listError}</p>}
+                {loadingList ? (
+                  <p className="text-slate-400">Cargando diagramas…</p>
+                ) : diagrams.length === 0 ? (
+                  <div className="glass-panel rounded-2xl p-8 text-center">
+                    <p className="text-3xl" aria-hidden="true">◇</p>
+                    <h2 className="mt-2 text-lg font-semibold text-white">Este tablero aún no tiene diagramas</h2>
+                    <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
+                      Diseña clases, casos de uso, secuencias, arquitectura, procesos y más, todo asociado a este proyecto.
+                      Se dibujan con PlantUML directamente en tu navegador.
+                    </p>
+                    {canEditContent ? (
+                      <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary mt-5 px-4 py-2 text-sm font-semibold">
+                        ＋ Añadir el primer diagrama
+                      </button>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-500">Tu rol es de lector: el propietario o un editor puede crearlos.</p>
+                    )}
+                  </div>
+                ) : (
+                  <ul className="uml-gallery">
+                    {diagrams.map((diagram) => {
+                      const type = umlDiagramType(diagram.kind)
+                      const category = UML_CATEGORIES.find((item) => item.id === type?.category)
+                      return (
+                        <li key={diagram.id}>
+                          <Link to={`${listPath}/${diagram.id}`} className="uml-card glass-panel">
+                            <span className="uml-card-icon" aria-hidden="true">{categoryIcons[type?.category ?? 'uml']}</span>
+                            <span className="min-w-0">
+                              <span className="uml-card-name">{diagram.name}</span>
+                              <span className="uml-card-type">{type?.name ?? diagram.kind}</span>
+                              <span className="uml-card-meta">
+                                {diagram.mode === 'code' ? '⌨ Código' : '✥ Visual'} · {editedAt.format(new Date(diagram.updated_at))}
+                              </span>
+                            </span>
+                            <span className="sr-only">{category?.name}</span>
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </section>
             )}
-          </section>
+          </>
         )}
       </div>
 

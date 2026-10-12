@@ -15,6 +15,10 @@ export function downloadPlantUml(source: string, fileName: string) {
   downloadBlob(new Blob([source], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
+export function downloadMarkdown(text: string, fileName: string) {
+  downloadBlob(new Blob([text], { type: 'text/markdown;charset=utf-8' }), fileName)
+}
+
 export function downloadSvg(svg: string, fileName: string) {
   downloadBlob(new Blob([sanitizeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }), fileName)
 }

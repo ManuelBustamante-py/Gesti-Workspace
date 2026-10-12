@@ -42,6 +42,20 @@ export async function listDiagrams(boardId: string) {
   return data as DiagramSummary[]
 }
 
+/**
+ * Diagramas del tablero con su contenido, para la evaluación de coherencia.
+ * Es más pesada que listDiagrams: se pide solo al abrir el análisis.
+ */
+export async function listDiagramsForAnalysis(boardId: string) {
+  const { data, error } = await supabase
+    .from('board_diagrams')
+    .select('id, name, kind, mode, source, model, updated_at')
+    .eq('board_id', boardId)
+    .order('updated_at', { ascending: false })
+  if (error) throw translateError(error)
+  return data as Array<Pick<Diagram, 'id' | 'name' | 'kind' | 'mode' | 'source' | 'model' | 'updated_at'>>
+}
+
 export async function getDiagram(id: string) {
   const { data, error } = await supabase.from('board_diagrams').select('*').eq('id', id).maybeSingle()
   if (error) throw translateError(error)
