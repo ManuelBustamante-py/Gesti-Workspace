@@ -1,9 +1,16 @@
 import { WEEKDAYS, nwIdentifier, type GanttModel, type GanttTask, type MindNode, type MindmapModel, type NetworkModel, type StructuredModel, type TimingModel, type WireframeModel } from './structured'
-import type { Finding, Interpretation } from './interpret'
+import type { Finding, Interpretation, InterpretationSection } from './interpret'
 
 const q = (text: string) => `«${text.replace(/\s*\n\s*/g, ' ').trim() || 'sin texto'}»`
 const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`)
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
+/** «sábado» → «sábados»; «lunes» no cambia. */
+const weekdays = (days: number[]) => list(days.map((day) => (WEEKDAYS[day].endsWith('s') ? WEEKDAYS[day] : `${WEEKDAYS[day]}s`)))
+const plain = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim() || 'sin texto'
+const fact = (label: string, value: number | string) => ({ label, value: String(value) })
+const table = (title: string, columns: string[], rows: string[][]): InterpretationSection | null => (rows.length ? { title, blocks: [{ kind: 'table', columns, rows }] } : null)
+const listOf = (title: string, items: string[], depths?: number[]): InterpretationSection | null => (items.length ? { title, blocks: [{ kind: 'list', items, ...(depths ? { depths } : {}) }] } : null)
+const sections = (...items: Array<InterpretationSection | null>) => items.filter((item): item is InterpretationSection => item !== null)
 
 // --- Mapa mental -------------------------------------------------------------------------
 
@@ -32,7 +39,23 @@ function interpretMindmap(model: MindmapModel): Interpretation {
   if (empty.length) findings.push({ level: 'warning', text: `${plural(empty.length, 'idea no tiene', 'ideas no tienen')} texto.` })
   const solo = root.children.filter((branch) => branch.children.length === 1)
   if (solo.length) findings.push({ level: 'info', text: `${list(solo.map((branch) => q(branch.text)))} ${solo.length === 1 ? 'tiene' : 'tienen'} una sola sub-idea: quizá pueda fusionarse con su rama.` })
-  return { summary, findings }
+  const tree: string[] = []
+  const levels: number[] = []
+  const walk = (node: MindNode, level: number) => {
+    tree.push(plain(node.text))
+    levels.push(level)
+    node.children.forEach((child) => walk(child, level + 1))
+  }
+  root.children.forEach((child) => walk(child, 0))
+  return {
+    summary,
+    findings,
+    facts: [fact('Ramas principales', root.children.length), fact('Ideas', count(root) - 1), fact('Niveles', depth(root) - 1)],
+    sections: sections(
+      table('Ramas principales', ['Rama', 'Lado', 'Sub-ideas directas', 'Ideas en total'], root.children.map((branch) => [plain(branch.text), branch.side === 'left' ? 'Izquierda' : 'Derecha', branch.children.map((child) => plain(child.text)).join(', ') || '—', String(count(branch) - 1)])),
+      listOf(`Estructura completa de «${plain(root.text)}»`, tree, levels),
+    ),
+  }
 }
 
 // --- Gantt --------------------------------------------------------------------------------
@@ -97,17 +120,17 @@ function interpretGantt(model: GanttModel): Interpretation {
   const end = [...dates.values()].reduce((max, item) => (item.end > max ? item.end : max), model.projectStart)
   summary.push(`El proyecto comienza el ${longDate(model.projectStart)} y, según el plan, termina el ${longDate(end)}.`)
   summary.push(`Tiene ${plural(work.length, 'tarea', 'tareas')}${milestones.length ? ` y ${plural(milestones.length, 'hito', 'hitos')} (${list(milestones.map((task) => q(task.name)))})` : ''}.`)
-  if (model.closed.length) summary.push(`No se trabaja los ${list(model.closed.map((day) => WEEKDAYS[day]))}.`)
-  for (const task of model.tasks.slice(0, 12)) {
+  if (model.closed.length) summary.push(`No se trabaja los ${weekdays(model.closed)}.`)
+  for (const task of model.tasks) {
     const range = dates.get(task.id)!
     const after = task.start.type === 'after' ? model.tasks.find((item) => item.id === (task.start as { task: string }).task) : undefined
     summary.push(task.milestone
       ? `Hito ${q(task.name)}: ${longDate(range.start)}${after ? `, al terminar ${q(after.name)}` : ''}.`
       : `${q(task.name)}: ${task.duration} día(s) hábiles, del ${longDate(range.start)} al ${longDate(range.end)}${after ? `, después de ${q(after.name)}` : ''}${task.resource ? `, a cargo de ${task.resource}` : ''}${task.progress ? ` (${task.progress}% avanzado)` : ''}.`)
   }
-  if (model.tasks.length > 12) summary.push(`…y ${model.tasks.length - 12} más.`)
 
   // Cadena más larga (camino crítico aproximado): la que termina en la fecha final.
+  let criticalText = ''
   const last = model.tasks.find((task) => dates.get(task.id)?.end === end)
   if (last && model.tasks.length > 1) {
     const chain: string[] = []
@@ -117,7 +140,10 @@ function interpretGantt(model: GanttModel): Interpretation {
       const start: GanttTask['start'] = current.start
       current = start.type === 'after' ? model.tasks.find((item) => item.id === start.task) : undefined
     }
-    if (chain.length > 1) summary.push(`Cadena que define la fecha de término: ${chain.join(' → ')}. Un retraso en cualquiera de estas tareas atrasa el proyecto.`)
+    if (chain.length > 1) {
+      summary.push(`Cadena que define la fecha de término: ${chain.join(' → ')}. Un retraso en cualquiera de estas tareas atrasa el proyecto.`)
+      criticalText = `${chain.join(' → ')}. Un retraso en cualquiera de estas tareas atrasa el término del proyecto.`
+    }
   }
 
   const names = new Map<string, number>()
@@ -134,7 +160,30 @@ function interpretGantt(model: GanttModel): Interpretation {
   const byResource = new Map<string, number>()
   for (const task of work) if (task.resource) byResource.set(task.resource, (byResource.get(task.resource) ?? 0) + task.duration)
   if (byResource.size) summary.push(`Carga por responsable: ${[...byResource].map(([name, days]) => `${name} ${days} día(s)`).join(', ')}.`)
-  return { summary, findings }
+  const shortDate = (key: string) => new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(toDate(key))
+  return {
+    summary,
+    findings,
+    facts: [fact('Inicio', shortDate(model.projectStart)), fact('Término', shortDate(end)), fact('Tareas', work.length), fact('Hitos', milestones.length)],
+    sections: sections(
+      table('Plan de trabajo', ['Tarea', 'Inicio', 'Fin', 'Días hábiles', 'Depende de', 'Responsable', 'Avance'], model.tasks.map((task) => {
+        const range = dates.get(task.id)!
+        const after = task.start.type === 'after' ? model.tasks.find((item) => item.id === (task.start as { task: string }).task) : undefined
+        return [
+          `${task.milestone ? '◆ ' : ''}${plain(task.name)}`,
+          shortDate(range.start),
+          task.milestone ? '—' : shortDate(range.end),
+          task.milestone ? 'Hito' : String(task.duration),
+          after ? plain(after.name) : task.start.type === 'date' ? 'Fecha fija' : '—',
+          task.resource?.trim() || '—',
+          task.progress ? `${task.progress} %` : '—',
+        ]
+      })),
+      criticalText ? { title: 'Camino crítico', blocks: [{ kind: 'text', text: criticalText }] } : null,
+      table('Carga por responsable', ['Responsable', 'Días hábiles asignados'], [...byResource].map(([name, days]) => [name, String(days)])),
+      model.closed.length ? { title: 'Calendario', blocks: [{ kind: 'text', text: `No se trabaja los ${weekdays(model.closed)}.` }] } : null,
+    ),
+  }
 }
 
 // --- Red -------------------------------------------------------------------------------------
@@ -178,7 +227,16 @@ function interpretNetwork(model: NetworkModel): Interpretation {
     if (!host.links.length) findings.push({ level: 'warning', text: `El equipo ${q(host.name)} no está conectado a ninguna red.` })
     if (host.links.some((link) => !link.address?.trim())) findings.push({ level: 'info', text: `${q(host.name)} no tiene dirección en alguna de sus redes.` })
   }
-  return { summary, findings }
+  const networkName = (id: string) => plain(model.networks.find((network) => network.id === id)?.name ?? id)
+  return {
+    summary,
+    findings,
+    facts: [fact('Segmentos', model.networks.length), fact('Equipos', model.hosts.length), fact('Puentes entre redes', gateways.length)],
+    sections: sections(
+      table('Segmentos de red', ['Segmento', 'Dirección', 'Equipos conectados'], model.networks.map((network) => [plain(network.name), network.address?.trim() || '—', model.hosts.filter((host) => host.links.some((link) => link.network === network.id)).map((host) => plain(host.name)).join(', ') || '—'])),
+      table('Equipos', ['Equipo', 'Descripción', 'Redes y direcciones'], model.hosts.map((host) => [plain(host.name), host.description?.trim() || '—', host.links.map((link) => `${networkName(link.network)}: ${link.address?.trim() || 'sin dirección'}`).join('\n') || '—'])),
+    ),
+  }
 }
 
 // --- Tiempos -----------------------------------------------------------------------------------
@@ -207,7 +265,19 @@ function interpretTiming(model: TimingModel): Interpretation {
     })
     if (participant.type === 'binary' && events.some((event) => !/^(high|low|alto|bajo)$/i.test(event.state))) findings.push({ level: 'warning', text: `${q(participant.name)} es binario: sus estados deben ser «high» o «low».` })
   }
-  return { summary, findings }
+  const typeLabel = { robust: 'Robusto', concise: 'Conciso', binary: 'Binario', clock: 'Reloj' } as const
+  return {
+    summary,
+    findings,
+    facts: [fact('Participantes', model.participants.length), fact('Cambios de estado', model.events.length), fact('Intervalo', `${times[0] ?? 0} – ${last}`)],
+    sections: sections(
+      table('Línea de tiempo', ['Participante', 'Tipo', 'Estados (desde – hasta)'], model.participants.map((participant) => {
+        if (participant.type === 'clock') return [plain(participant.name), typeLabel.clock, `Período ${participant.period ?? 50}`]
+        const events = model.events.filter((event) => event.participant === participant.id).sort((a, b) => a.time - b.time)
+        return [plain(participant.name), typeLabel[participant.type], events.map((event, index) => `${event.state} (${event.time} – ${events[index + 1]?.time ?? `${last}+`})`).join('\n') || '—']
+      })),
+    ),
+  }
 }
 
 // --- Wireframe -----------------------------------------------------------------------------------
@@ -237,7 +307,17 @@ function interpretWireframe(model: WireframeModel): Interpretation {
   const widest = Math.max(0, ...model.rows.map((row) => row.cells.length))
   if (widest > 4) findings.push({ level: 'info', text: `Una fila tiene ${widest} columnas: en pantallas de celular se verá apretada.` })
   if (of('password').length && !widgets.some((widget) => /olvid|recuperar/i.test(widget.label))) findings.push({ level: 'info', text: 'Hay un campo de contraseña sin opción para recuperarla.' })
-  return { summary, findings }
+  const widgetLabel: Record<string, string> = { title: 'Título', text: 'Texto', input: 'Campo', password: 'Contraseña', button: 'Botón', checkbox: 'Casilla', radio: 'Opción', select: 'Lista', link: 'Enlace', image: 'Imagen', separator: 'Separador' }
+  return {
+    summary,
+    findings,
+    facts: [fact('Filas', model.rows.length), fact('Elementos', widgets.length), fact('Datos que pide', fields.length), fact('Acciones', actions.length)],
+    sections: sections(
+      table('Contenido por fila', ['Fila', 'Elementos (de izquierda a derecha)'], model.rows.map((row, index) => [String(index + 1), row.cells.map((cell) => `${widgetLabel[cell.type] ?? cell.type}${cell.label.trim() ? `: ${plain(cell.label)}` : ''}${cell.checked ? ' (marcada)' : ''}`).join('\n') || '—'])),
+      table('Datos que pide', ['Etiqueta', 'Tipo'], fields.map((item) => [plain(item.label || item.cell.label || 'sin etiqueta'), widgetLabel[item.cell.type]])),
+      listOf('Acciones disponibles', actions.map((widget) => `${widgetLabel[widget.type]}: ${plain(widget.label)}`)),
+    ),
+  }
 }
 
 export function interpretStructured(model: StructuredModel): Interpretation {
@@ -334,5 +414,13 @@ export function explainRegex(source: string): Interpretation {
   if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern)) findings.push({ level: 'warning', text: 'Hay un cuantificador dentro de un grupo que también se repite, como (a+)+: puede volverse extremadamente lento con ciertos textos (retroceso catastrófico).' })
   if (/[a-z0-9]\.(com|cl|org|net|es)\b/i.test(pattern)) findings.push({ level: 'info', text: 'Un «.» sin escapar acepta cualquier carácter; para un punto literal (p. ej. en un dominio) usa «\\.».' })
   if (/\|\||\(\||\|\)/.test(pattern)) findings.push({ level: 'warning', text: 'Hay una alternativa vacía («||», «(|» o «|)»): acepta el texto vacío.' })
-  return { summary, findings }
+  const pieces = summary.slice(1)
+  return {
+    summary,
+    findings,
+    sections: sections(
+      { title: 'Patrón', blocks: [{ kind: 'text', text: pattern }] },
+      listOf('Qué acepta, pieza por pieza', pieces.map((line) => line.trim().replace(/^•\s*/, '')), pieces.map((line) => Math.floor((line.length - line.trimStart().length) / 2))),
+    ),
+  }
 }

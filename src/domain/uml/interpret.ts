@@ -14,11 +14,49 @@ export type Finding = { level: 'warning' | 'info' | 'ok'; text: string }
 export type InterpretationStep =
   | { kind: 'step'; number: number; text: string; depth: number }
   | { kind: 'group'; text: string; depth: number }
+/** Bloques de una sección: el panel y el informe PDF los dibujan igual. */
+export type InterpretationBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'list'; items: string[]; depths?: number[] }
+  | { kind: 'table'; columns: string[]; rows: string[][] }
+  | { kind: 'steps'; steps: InterpretationStep[] }
+export type InterpretationSection = { title: string; blocks: InterpretationBlock[] }
+export type InterpretationFact = { label: string; value: string }
 export type Interpretation = {
+  /** Lectura en prosa (la primera frase es el resumen general). */
   summary: string[]
-  /** Recorrido completo y en orden (secuencias): se muestra como lista numerada. */
-  steps?: InterpretationStep[]
+  /** Cifras clave del diagrama. */
+  facts?: InterpretationFact[]
+  /** Presentación ordenada (tablas, listas, recorrido). Si existe, reemplaza a summary salvo su primera frase. */
+  sections?: InterpretationSection[]
   findings: Finding[]
+}
+
+// --- Construcción de secciones ---------------------------------------------------------
+
+/** Nombre sin comillas para celdas de tabla. */
+const plain = (text: string | undefined) => (text ?? '').replace(/\s*\n\s*/g, ' ').trim() || 'sin nombre'
+const joined = (items: string[]) => (items.length ? items.join(', ') : '—')
+const fact = (label: string, value: number | string): InterpretationFact => ({ label, value: String(value) })
+/** Plural de una etiqueta de tipo: «Componente» → «Componentes», «Base de datos» → «Bases de datos». */
+function pluralLabel(label: string) {
+  const [first, ...rest] = label.split(' ')
+  const plural = /[aeiouáéó]$/i.test(first) ? `${first}s` : /z$/i.test(first) ? `${first.slice(0, -1)}ces` : /s$/i.test(first) ? first : `${first}es`
+  return [plural.replace(/ón(es)$/, 'on$1'), ...rest].join(' ')
+}
+const table = (title: string, columns: string[], rows: string[][]): InterpretationSection | null =>
+  rows.length ? { title, blocks: [{ kind: 'table', columns, rows }] } : null
+const listSection = (title: string, items: string[]): InterpretationSection | null => (items.length ? { title, blocks: [{ kind: 'list', items }] } : null)
+const sections = (...items: Array<InterpretationSection | null>) => items.filter((item): item is InterpretationSection => item !== null)
+
+/** Tabla «Agrupación»: qué contiene cada contenedor (paquete, nodo, límite, carril). */
+function containmentTable(model: GraphModel, title = 'Agrupación') {
+  const parents = containerMap(model.kind, model.nodes)
+  const spec = (node: GraphNode) => nodeSpec(model.kind, node.type)
+  const rows = model.nodes
+    .filter((node) => spec(node).container)
+    .map((container) => [plain(container.name), spec(container).label, joined(model.nodes.filter((node) => parents.get(node.id) === container.id && node.type !== 'note').map((node) => plain(node.name)))])
+  return table(title, ['Contenedor', 'Tipo', 'Contiene'], rows)
 }
 
 const q = (text: string) => `«${text.replace(/\s*\n\s*/g, ' ').trim() || 'sin nombre'}»`
@@ -177,7 +215,35 @@ function interpretUseCase(model: GraphModel): Interpretation {
     }
   }
   commonGraphChecks(model, findings)
-  return { summary, findings }
+
+  const parents = containerMap(model.kind, model.nodes)
+  const linked = (id: string, type: string) =>
+    model.edges
+      .filter((edge) => ['association', 'directed'].includes(edge.type) && (edge.source === id || edge.target === id))
+      .map((edge) => byId.get(edge.source === id ? edge.target : edge.source))
+      .filter((node): node is GraphNode => node?.type === type)
+      .map((node) => plain(node.name))
+  const ends = (type: string, side: 'source' | 'target', id: string) =>
+    model.edges.filter((edge) => edge.type === type && edge[side] === id).map((edge) => plain(byId.get(side === 'source' ? edge.target : edge.source)?.name))
+  const includes = model.edges.filter((edge) => edge.type === 'include' || edge.type === 'extend')
+  return {
+    summary,
+    findings,
+    facts: [fact('Actores', actors.length), fact('Casos de uso', useCases.length), fact('Include', includes.filter((edge) => edge.type === 'include').length), fact('Extend', includes.filter((edge) => edge.type === 'extend').length)],
+    sections: sections(
+      table('Actores', ['Actor', 'Casos de uso que realiza', 'Especialización de'], actors.map((actor) => [plain(actor.name), joined(linked(actor.id, 'usecase')), joined(ends('generalization', 'source', actor.id))])),
+      table('Casos de uso', ['Caso de uso', 'Actores', 'Incluye', 'Lo extienden', 'Sistema'], useCases.map((useCase) => [
+        plain(useCase.name),
+        joined(linked(useCase.id, 'actor')),
+        joined(ends('include', 'source', useCase.id)),
+        joined(ends('extend', 'target', useCase.id)),
+        plain(byId.get(parents.get(useCase.id) ?? '')?.name ?? '—'),
+      ])),
+      listSection('Cómo se leen las relaciones entre casos', includes.map((edge) => edge.type === 'include'
+        ? `Siempre que se realiza ${name(edge.source)}, también se realiza ${name(edge.target)} (include).`
+        : `${name(edge.source)} es un comportamiento opcional que puede ampliar ${name(edge.target)} (extend).`)),
+    ),
+  }
 }
 
 // --- Clases y afines (objetos, bloques, perfiles, paquetes, requisitos) -------------------
@@ -287,7 +353,40 @@ function interpretClass(model: GraphModel): Interpretation {
     }
   }
   commonGraphChecks(model, findings)
-  return { summary, findings }
+
+  const members = (lines: string[] | undefined) => (lines ?? []).map((line) => line.trim()).filter((line) => line && !/^(--|==|\.\.)$/.test(line))
+  const withMethods = classes.some((node) => spec(node).members === 'class')
+  const relations = model.edges.filter((item) => item.type !== 'note-link')
+  return {
+    summary,
+    findings,
+    facts: [...[...counts].map(([label, count]) => fact(count === 1 ? label[0].toUpperCase() + label.slice(1) : pluralLabel(label[0].toUpperCase() + label.slice(1)), count)), fact('Relaciones', relations.length)],
+    sections: sections(
+      table(
+        'Clasificadores',
+        withMethods ? ['Nombre', 'Tipo', node0Label(model), 'Operaciones'] : ['Nombre', 'Tipo', node0Label(model)],
+        classes.map((node) => {
+          const row = [plain(node.name), spec(node).label, members(node.attributes).join('\n') || '—']
+          return withMethods ? [...row, members(node.methods).join('\n') || '—'] : row
+        }),
+      ),
+      table('Relaciones', ['Desde', 'Relación', 'Hacia', 'Multiplicidad', 'Significado'], relations.map((edge) => [
+        plain(byId.get(edge.source)?.name),
+        `${edgeSpec(model.kind, edge.type).label}${edge.label?.trim() ? `: ${edge.label.trim()}` : ''}`,
+        plain(byId.get(edge.target)?.name),
+        edge.sourceLabel || edge.targetLabel ? `${edge.sourceLabel?.trim() || '?'} a ${edge.targetLabel?.trim() || '?'}` : '—',
+        relationSentence(model, edge, name),
+      ])),
+      containmentTable(model),
+    ),
+  }
+}
+
+/** Encabezado de la columna de miembros según el tipo de diagrama. */
+function node0Label(model: GraphModel) {
+  if (model.kind === 'object') return 'Valores'
+  if (model.kind === 'requirement' || model.kind === 'block' || model.kind === 'profile') return 'Campos'
+  return 'Atributos / valores'
 }
 
 // --- Flujos: estados, actividades, diagramas de flujo, BPMN ----------------------------------
@@ -324,7 +423,9 @@ function interpretFlow(model: GraphModel): Interpretation {
     visited.add(id)
     const next = out(id)
     if (next.length === 0) continue
-    const from = spec(byId.get(id)!).pseudo === 'initial' ? 'Al comenzar' : `Después de ${describe(id)}`
+    const pseudo = spec(byId.get(id)!).pseudo
+    const previous = pseudo === 'choice' ? `la decisión ${describe(id).replace(/^decide (el camino)?/, '')}`.trim() : pseudo === 'fork' ? 'la bifurcación' : pseudo === 'join' ? 'la unión de los caminos paralelos' : describe(id)
+    const from = pseudo === 'initial' ? 'Al comenzar' : `Después de ${previous}`
     const targets = next.map((edge) => `${edge.label?.trim() ? `si ${q(edge.label)} → ` : ''}${describe(edge.target)}`)
     sentences.push(`${from}: ${list(targets)}.`)
     next.forEach((edge) => queue.push(edge.target))
@@ -361,7 +462,40 @@ function interpretFlow(model: GraphModel): Interpretation {
     for (const node of steps) if (out(node.id).length === 0 && !finals.length) findings.push({ level: 'info', text: `${q(node.name)} es un estado sin salida (terminal).` })
   }
   if (!findings.some((finding) => finding.level === 'warning') && initials.length) findings.push({ level: 'ok', text: 'Todos los pasos son alcanzables desde el inicio.' })
-  return { summary, findings }
+
+  // Transiciones en el orden del recorrido (las que no se alcanzan, al final).
+  const label = (id: string) => {
+    const node = byId.get(id)
+    if (!node) return '?'
+    const pseudo = spec(node).pseudo
+    if (pseudo === 'initial') return '● Inicio'
+    if (pseudo === 'final') return '◉ Fin'
+    if (pseudo === 'fork') return '⫼ Bifurcación'
+    if (pseudo === 'join') return '⫼ Unión'
+    if (pseudo === 'choice') return `◇ ${node.name.trim() && node.name !== spec(node).defaultName ? plain(node.name) : 'Decisión'}`
+    return plain(node.name)
+  }
+  const order = [...visited]
+  const ordered = [...flows].sort((a, b) => {
+    const x = order.indexOf(a.source)
+    const y = order.indexOf(b.source)
+    return (x < 0 ? Infinity : x) - (y < 0 ? Infinity : y)
+  })
+  return {
+    summary,
+    findings,
+    facts: [
+      fact(word[1][0].toUpperCase() + word[1].slice(1), steps.length),
+      fact('Decisiones', model.nodes.filter((node) => spec(node).pseudo === 'choice').length),
+      fact('Transiciones', flows.length),
+      fact('Finales', finals.length),
+    ],
+    sections: sections(
+      table('Transiciones', ['Desde', 'Condición', 'Hacia'], ordered.map((edge) => [label(edge.source), edge.label?.trim() || '—', label(edge.target)])),
+      listSection('Recorrido desde el inicio', sentences),
+      containmentTable(model, model.kind === 'state' ? 'Estados compuestos' : 'Carriles y grupos'),
+    ),
+  }
 }
 
 // --- Entidad-relación -------------------------------------------------------------------
@@ -394,7 +528,40 @@ function interpretER(model: GraphModel): Interpretation {
   }
   containmentSummary(model, summary)
   commonGraphChecks(model, findings)
-  return { summary, findings }
+
+  const parents = containerMap(model.kind, model.nodes)
+  const domains = model.nodes.some((node) => nodeSpec(model.kind, node.type).container)
+  const field = (line: string) => line.replace(/^\*\s*/, '').replace(/<<[^>]*>>/g, '').replace(/\s*'.*$/, '').replace(/\s*:\s*/, ' : ').trim()
+  const relations = model.edges.filter((item) => item.type === 'er')
+  return {
+    summary,
+    findings,
+    facts: [
+      fact('Entidades', entities.length),
+      fact('Relaciones', relations.length),
+      ...(domains ? [fact('Dominios', model.nodes.filter((node) => nodeSpec(model.kind, node.type).container).length)] : []),
+    ],
+    sections: sections(
+      table('Entidades', [...['Entidad'], ...(domains ? ['Dominio'] : []), 'Clave primaria', 'Claves foráneas', 'Otros campos'], entities.map((entity) => {
+        const fields = (entity.attributes ?? []).filter((line) => line.trim() && line.trim() !== '--')
+        const isKey = (line: string, key: 'PK' | 'FK') => new RegExp(`<<\\s*${key}\\s*>>`, 'i').test(line)
+        return [
+          plain(entity.name),
+          ...(domains ? [plain(byId.get(parents.get(entity.id) ?? '')?.name ?? '—')] : []),
+          fields.filter((line) => isKey(line, 'PK')).map(field).join('\n') || '—',
+          fields.filter((line) => isKey(line, 'FK')).map(field).join('\n') || '—',
+          fields.filter((line) => !isKey(line, 'PK') && !isKey(line, 'FK')).map(field).join('\n') || '—',
+        ]
+      })),
+      table('Relaciones', ['Entidad', 'Cardinalidad', 'Entidad relacionada', 'Relación', 'Lectura'], relations.map((edge) => {
+        const from = plain(byId.get(edge.source)?.name)
+        const to = plain(byId.get(edge.target)?.name)
+        const left = edge.sourceLabel?.trim() || '1'
+        const right = edge.targetLabel?.trim() || '0..*'
+        return [from, `${left} a ${right}`, to, edge.label?.trim() || '—', `Cada ${from} se relaciona con ${CARDINALITY_TEXT[right] ?? right} ${to}; cada ${to}, con ${CARDINALITY_TEXT[left] ?? left} ${from}.`]
+      })),
+    ),
+  }
 }
 
 // --- Descriptivos (componentes, despliegue, C4, nubes, DFD, ArchiMate…) -----------------------
@@ -406,6 +573,9 @@ function interpretDescriptive(model: GraphModel): Interpretation {
   const elements = model.nodes.filter(real)
   const groups = new Map<string, string[]>()
   for (const node of elements) groups.set(spec(node).label, [...(groups.get(spec(node).label) ?? []), q(node.name)])
+  const containerCount = model.nodes.filter((node) => spec(node).container).length
+  const linkCount = model.edges.filter((item) => item.type !== 'note-link').length
+  summary.push(`El diagrama tiene ${list([...groups].map(([label, names]) => `${names.length} ${(names.length === 1 ? label : pluralLabel(label)).toLowerCase()}`)) || 'ningún elemento'}${containerCount ? ` en ${plural(containerCount, 'contenedor', 'contenedores')}` : ''}, con ${plural(linkCount, 'conexión', 'conexiones')}.`)
   summary.push(`Elementos: ${[...groups].map(([label, names]) => `${label.toLowerCase()} (${names.join(', ')})`).join('; ') || 'ninguno'}.`)
   containmentSummary(model, summary)
   for (const edge of model.edges.filter((item) => item.type !== 'note-link')) {
@@ -451,7 +621,40 @@ function interpretDescriptive(model: GraphModel): Interpretation {
     if (unnumbered.length) findings.push({ level: 'info', text: `En un diagrama de comunicación los mensajes se numeran (1:, 1.1:, 2:…); ${plural(unnumbered.length, 'enlace no tiene', 'enlaces no tienen')} número.` })
   }
   commonGraphChecks(model, findings)
-  return { summary, findings }
+
+  const parents = containerMap(model.kind, model.nodes)
+  /** Ruta de contenedores: «Servidor Backend › Motor ML». */
+  const location = (id: string) => {
+    const path: string[] = []
+    let current = parents.get(id) ?? null
+    while (current) {
+      path.unshift(plain(byId.get(current)?.name))
+      current = parents.get(current) ?? null
+    }
+    return path.join(' › ') || '—'
+  }
+  const connections = model.edges.filter((item) => item.type !== 'note-link')
+  const verb = (type: string) => {
+    const edge = edgeSpec(model.kind, type)
+    return model.kind === 'dfd' ? 'envía datos a' : edge.type === 'serving' ? 'sirve a' : edge.type === 'triggering' ? 'desencadena' : edge.type === 'access' ? 'accede a' : edge.type === 'link' ? 'se conecta con' : edge.dashed ? 'depende de' : 'usa a'
+  }
+  return {
+    summary,
+    findings,
+    facts: [
+      ...[...groups].map(([label, names]) => fact(names.length === 1 ? label : pluralLabel(label), names.length)),
+      ...[...new Set(model.nodes.filter((node) => spec(node).container).map((node) => spec(node).label))].map((label) => {
+        const count = model.nodes.filter((node) => spec(node).container && spec(node).label === label).length
+        return fact(count === 1 ? label : pluralLabel(label), count)
+      }),
+      fact('Conexiones', connections.length),
+    ],
+    sections: sections(
+      table('Elementos', ['Elemento', 'Tipo', 'Ubicado en'], elements.map((node) => [plain(node.name), spec(node).label, location(node.id)])),
+      table('Conexiones', ['Desde', 'Relación', 'Hacia', 'Detalle'], connections.map((edge) => [plain(byId.get(edge.source)?.name), verb(edge.type), plain(byId.get(edge.target)?.name), edge.label?.trim() || '—'])),
+      containmentTable(model),
+    ),
+  }
 }
 
 // --- Secuencia ------------------------------------------------------------------------------
@@ -508,7 +711,19 @@ function interpretSequence(model: SequenceModel): Interpretation {
   if (messages.length && model.participants[0] && messages[0].from !== model.participants[0].id) {
     findings.push({ level: 'info', text: `La interacción no empieza en el primer participante (${q(model.participants[0].name)}); ordenar de izquierda a derecha según quién inicia facilita la lectura.` })
   }
-  return { summary, steps, findings }
+  const typeLabel: Record<string, string> = { actor: 'Actor', participant: 'Participante', boundary: 'Interfaz (boundary)', control: 'Control', entity: 'Entidad', database: 'Base de datos', collections: 'Colección', queue: 'Cola' }
+  const sent = (id: string) => messages.filter((message) => message.from === id && message.type !== 'reply').length
+  const received = (id: string) => messages.filter((message) => message.to === id && message.type !== 'reply').length
+  const replies = messages.filter((message) => message.type === 'reply').length
+  return {
+    summary,
+    findings,
+    facts: [fact('Participantes', model.participants.length), fact('Mensajes', messages.length), fact('Respuestas', replies), fact('Fragmentos', opened)],
+    sections: sections(
+      table('Participantes', ['Participante', 'Tipo', 'Peticiones que envía', 'Peticiones que recibe'], model.participants.map((participant) => [plain(participant.name), typeLabel[participant.type] ?? participant.type, String(sent(participant.id)), String(received(participant.id))])),
+      steps.length ? { title: 'Recorrido paso a paso', blocks: [{ kind: 'steps', steps }] } : null,
+    ),
+  }
 }
 
 /** Interpretación del modelo visual según su tipo. */

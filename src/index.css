@@ -2318,15 +2318,37 @@ a:focus-visible {
 .uml-count-info { border-radius: 999px; background: rgba(214, 170, 98, 0.14); padding: 0.1rem 0.5rem; color: #e6c48c; }
 .uml-count-ok { border-radius: 999px; background: rgba(70, 160, 110, 0.16); padding: 0.1rem 0.5rem; color: #8fd6ad; }
 .uml-interpretation-body { border-top: 1px solid rgba(166, 180, 184, 0.1); padding: 0.8rem 0.9rem 0.9rem; }
-.uml-interpretation-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
-@media (max-width: 900px) { .uml-interpretation-grid { grid-template-columns: minmax(0, 1fr); } }
+.uml-interpretation-grid { display: grid; gap: 1.1rem; grid-template-columns: minmax(0, 1.9fr) minmax(16rem, 1fr); }
+@media (max-width: 1100px) { .uml-interpretation-grid { grid-template-columns: minmax(0, 1fr); } }
 .uml-interpretation-heading { margin-bottom: 0.4rem; color: var(--text-muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .uml-interpretation-summary { display: grid; gap: 0.3rem; color: var(--text-main); font-size: 0.84rem; line-height: 1.45; white-space: pre-wrap; }
 .uml-finding { border-radius: 0.5rem; padding: 0.4rem 0.6rem; font-size: 0.8rem; line-height: 1.4; }
 .uml-finding-warning { background: rgba(224, 96, 122, 0.1); color: #f6c1cc; }
 .uml-finding-info { background: rgba(214, 170, 98, 0.08); color: #ead3a8; }
 .uml-finding-ok { background: rgba(70, 160, 110, 0.1); color: #a9e2c2; }
-.uml-interpretation-lead { margin-bottom: 0.5rem; color: var(--text-main); font-size: 0.88rem; line-height: 1.5; }
+.uml-interpretation-lead { flex: 1 1 24rem; color: var(--text-main); font-size: 0.9rem; line-height: 1.5; }
+.uml-interpretation-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.6rem 1rem; margin-bottom: 0.75rem; }
+.uml-view-switch { display: inline-flex; overflow: hidden; border: 1px solid rgba(166, 180, 184, 0.2); border-radius: 0.5rem; }
+.uml-view-switch button { padding: 0.2rem 0.6rem; color: var(--text-muted); font-size: 0.72rem; font-weight: 600; }
+.uml-view-switch button + button { border-left: 1px solid rgba(166, 180, 184, 0.2); }
+.uml-view-switch .uml-view-active { background: rgba(166, 180, 184, 0.16); color: var(--text-main); }
+.uml-facts { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); margin-bottom: 0.9rem; }
+.uml-fact { border: 1px solid rgba(166, 180, 184, 0.14); border-radius: 0.6rem; background: rgba(166, 180, 184, 0.05); padding: 0.45rem 0.65rem; }
+.uml-fact dt { color: var(--text-muted); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.uml-fact dd { margin-top: 0.1rem; color: #fff; font-size: 1.05rem; font-weight: 700; }
+.uml-section { border: 1px solid rgba(166, 180, 184, 0.12); border-radius: 0.65rem; background: rgba(17, 21, 23, 0.4); padding: 0.65rem 0.75rem; }
+.uml-section-title { margin-bottom: 0.5rem; color: var(--text-main); font-size: 0.82rem; font-weight: 700; }
+.uml-section-text { color: var(--text-main); font-size: 0.82rem; line-height: 1.5; overflow-wrap: anywhere; }
+.uml-section-list { display: grid; gap: 0.25rem; padding-left: 1rem; color: var(--text-main); font-size: 0.82rem; line-height: 1.45; list-style: disc; }
+.uml-table-wrap { overflow-x: auto; border: 1px solid rgba(166, 180, 184, 0.12); border-radius: 0.5rem; }
+.uml-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; line-height: 1.4; }
+.uml-table th, .uml-table td { padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; white-space: pre-line; }
+.uml-table thead th { background: rgba(166, 180, 184, 0.1); color: var(--text-muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
+.uml-table tbody tr { border-top: 1px solid rgba(166, 180, 184, 0.1); }
+.uml-table tbody tr:nth-child(even) { background: rgba(166, 180, 184, 0.04); }
+.uml-table tbody th { color: #fff; font-weight: 600; }
+.uml-table td { color: var(--text-main); }
+.uml-table .uml-cell-empty { color: #6b777b; }
 .uml-interpretation-subheading { margin: 0.9rem 0 0.4rem; color: var(--text-muted); font-size: 0.72rem; font-weight: 600; }
 .uml-summary-bullet { position: relative; padding-left: 0.9rem; }
 .uml-summary-bullet::before { position: absolute; left: 0.1rem; color: var(--accent-ui); content: '•'; }

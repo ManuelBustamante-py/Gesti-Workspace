@@ -4,6 +4,9 @@ import { jsPDF } from 'jspdf'
 
 import InterpretationPanel from '../components/uml/InterpretationPanel'
 import { interpretModel } from '../domain/uml/interpret'
+import { explainRegex } from '../domain/uml/interpretStructured'
+import { isVisualKind } from '../domain/uml/visualModel'
+import { UML_DIAGRAM_TYPES } from '../domain/umlCatalog'
 import { parsePlantUml } from '../domain/uml/parsePlantUml'
 import { buildDiagramReport, pdfText } from './diagramReport'
 
@@ -14,7 +17,8 @@ const interpretation = interpretModel(parsePlantUml(lines.join('\n'), 'sequence'
 
 describe('interpretación de secuencias', () => {
   it('describe todos los mensajes, sin cortar en «…y N más», con los fragmentos anidados', () => {
-    const steps = interpretation.steps!
+    const block = interpretation.sections!.flatMap((section) => section.blocks).find((item) => item.kind === 'steps')
+    const steps = block?.kind === 'steps' ? block.steps : []
     expect(steps.filter((step) => step.kind === 'step')).toHaveLength(28)
     expect(interpretation.summary.join(' ')).not.toMatch(/mensajes más/)
     expect(steps.find((step) => step.kind === 'group' && step.text.startsWith('Si «hay datos»'))?.depth).toBe(0)
@@ -30,7 +34,7 @@ describe('InterpretationPanel', () => {
     const html = renderToStaticMarkup(<InterpretationPanel interpretation={interpretation} onDownloadReport={() => {}} />)
     expect(html).toContain('Recorrido paso a paso')
     expect(html).toContain('Mostrar los 16 pasos restantes')
-    expect(html).toContain('Descargar informe del diagrama (PDF)')
+    expect(html).toContain('Informe PDF')
     expect(renderToStaticMarkup(<InterpretationPanel interpretation={interpretation} />)).not.toContain('PDF')
   })
 })
@@ -56,6 +60,25 @@ describe('informe PDF', () => {
   })
 
   it('reemplaza los símbolos que las fuentes del PDF no tienen', () => {
-    expect(pdfText('A → B ✓ «ñandú» – ok ≥ 2 😀')).toBe('A -> B  «ñandú» – ok >= 2 ?')
+    expect(pdfText('A → B ✓ «ñandú» – ok ≥ 2 😀')).toBe('A -> B «ñandú» – ok >= 2')
+    expect(pdfText('◆ Entrega')).toBe('Entrega')
+  })
+})
+
+describe('interpretación estructurada de cada tipo de diagrama', () => {
+  const templates = UML_DIAGRAM_TYPES.filter((type) => type.id === 'regex' || isVisualKind(type.id))
+
+  it.each(templates.map((type) => [type.id, type] as const))('%s: cifras, secciones, panel y PDF', (_, type) => {
+    const interpretation = type.id === 'regex' ? explainRegex(type.template) : interpretModel(parsePlantUml(type.template, type.id, null).model)
+    expect(interpretation.sections?.length).toBeGreaterThan(0)
+    if (type.id !== 'regex') expect(interpretation.facts?.length).toBeGreaterThan(0)
+    for (const block of interpretation.sections!.flatMap((section) => section.blocks)) {
+      if (block.kind === 'table') for (const row of block.rows) expect(row).toHaveLength(block.columns.length)
+    }
+    const html = renderToStaticMarkup(<InterpretationPanel interpretation={interpretation} />)
+    expect(html).toContain('uml-section-title')
+    expect(html).not.toMatch(/NaN|undefined/)
+    const doc = buildDiagramReport(jsPDF, { name: type.name, typeName: type.name, generatedAt: new Date(), image: null, interpretation })
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
   })
 })
