@@ -13,6 +13,7 @@ import { interpretModel } from '../../domain/uml/interpret'
 import { parsePlantUml } from '../../domain/uml/parsePlantUml'
 import { isVisualKind, modelFromDiagram } from '../../domain/uml/visualModel'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../lib/diagramExport'
+import { downloadDiagramReport } from '../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../services/diagrams'
 
 interface DiagramEditorProps {
@@ -35,6 +36,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
   const [source, setSource] = useState(diagram.source)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [downloadingReport, setDownloadingReport] = useState(false)
   const [notice, setNotice] = useState('')
   const [render, setRender] = useState<RenderState>({ status: 'loading' })
   const [tab, setTab] = useState<'code' | 'preview'>('code')
@@ -212,7 +214,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
     onBack()
   }
 
-  async function exportAs(format: 'svg' | 'png' | 'puml') {
+  async function exportAs(format: 'svg' | 'png' | 'pdf' | 'puml') {
     setError('')
     try {
       if (format === 'puml') return downloadPlantUml(source, diagramFileName(name, 'puml'))
@@ -225,9 +227,15 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
         svg = render.svg
       }
       if (format === 'svg') downloadSvg(svg, diagramFileName(name, 'svg'))
-      else await downloadPng(svg, diagramFileName(name, 'png'))
+      else if (format === 'png') await downloadPng(svg, diagramFileName(name, 'png'))
+      else {
+        setDownloadingReport(true)
+        await downloadDiagramReport(svg, { name: name.trim() || diagram.name, typeName: type?.name ?? diagram.kind, generatedAt: new Date(), interpretation, unavailable: visualCapable || diagram.kind === 'regex' ? 'No se pudo leer el código para interpretarlo.' : 'Este tipo de diagrama no tiene interpretación automática.' }, diagramFileName(name, 'pdf'))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo exportar el diagrama.')
+    } finally {
+      setDownloadingReport(false)
     }
   }
 
@@ -282,6 +290,7 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void exportAs('svg')} className="btn-ghost px-3 py-1.5 text-sm">SVG</button>
           <button type="button" onClick={() => void exportAs('png')} className="btn-ghost px-3 py-1.5 text-sm">PNG</button>
+          <button type="button" onClick={() => void exportAs('pdf')} className="btn-ghost px-3 py-1.5 text-sm" disabled={downloadingReport} title="Informe con la imagen del diagrama y su interpretación">PDF</button>
           <button type="button" onClick={() => void exportAs('puml')} className="btn-ghost px-3 py-1.5 text-sm" title="Código fuente PlantUML">.puml</button>
           {canEdit && (
             <>
@@ -333,6 +342,8 @@ function DiagramEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, l
       <InterpretationPanel
         interpretation={interpretation}
         unavailable={visualCapable || diagram.kind === 'regex' ? 'No se pudo leer el código para interpretarlo.' : 'Este tipo de diagrama no tiene interpretación automática.'}
+        onDownloadReport={() => void exportAs('pdf')}
+        downloading={downloadingReport}
       />
     </div>
   )

@@ -10,7 +10,16 @@ import type { GraphEdge, GraphModel, GraphNode, SequenceModel, VisualModel } fro
  * diagrama afirma y señala lo que contradice las reglas de su notación.
  */
 export type Finding = { level: 'warning' | 'info' | 'ok'; text: string }
-export type Interpretation = { summary: string[]; findings: Finding[] }
+/** Paso numerado de un recorrido (un mensaje) o encabezado de un fragmento (alt, loop…). */
+export type InterpretationStep =
+  | { kind: 'step'; number: number; text: string; depth: number }
+  | { kind: 'group'; text: string; depth: number }
+export type Interpretation = {
+  summary: string[]
+  /** Recorrido completo y en orden (secuencias): se muestra como lista numerada. */
+  steps?: InterpretationStep[]
+  findings: Finding[]
+}
 
 const q = (text: string) => `«${text.replace(/\s*\n\s*/g, ' ').trim() || 'sin nombre'}»`
 const list = (items: string[]) =>
@@ -301,7 +310,7 @@ function interpretFlow(model: GraphModel): Interpretation {
   const visited = new Set<string>()
   const queue = initials.map((node) => node.id)
   const sentences: string[] = []
-  while (queue.length && sentences.length < 14) {
+  while (queue.length) {
     const id = queue.shift()!
     if (visited.has(id)) continue
     visited.add(id)
@@ -313,7 +322,6 @@ function interpretFlow(model: GraphModel): Interpretation {
     next.forEach((edge) => queue.push(edge.target))
   }
   summary.push(...sentences)
-  if (queue.length) summary.push('…y continúa.')
   containmentSummary(model, summary)
 
   if (initials.length === 0) findings.push({ level: 'warning', text: 'No hay un inicio: agrega un punto de inicio para saber dónde comienza el flujo.' })
@@ -446,23 +454,33 @@ function interpretSequence(model: SequenceModel): Interpretation {
   const name = (id: string) => q(model.participants.find((participant) => participant.id === id)?.name ?? '?')
   const messages = model.messages.filter((message) => message.raw === undefined)
   summary.push(`Participan ${list(model.participants.map((participant) => q(participant.name)))} en ${plural(messages.length, 'mensaje', 'mensajes')}.`)
+  // Recorrido completo: cada mensaje numerado y los fragmentos (alt, loop…) como encabezados anidados.
+  const steps: InterpretationStep[] = []
   let step = 0
+  let depth = 0
   for (const message of model.messages) {
     if (message.raw !== undefined) {
       const raw = message.raw.trim()
       const fragment = /^(alt|opt|loop|par|break|critical|group)\s*(.*)$/.exec(raw)
-      if (fragment) summary.push(`— ${({ alt: 'Si', opt: 'Opcionalmente, si', loop: 'Repetir mientras', par: 'En paralelo', break: 'Interrumpir si', critical: 'Sección crítica', group: 'Grupo' } as Record<string, string>)[fragment[1]]} ${fragment[2] ? q(fragment[2]) : ''}:`)
-      else if (/^else\b/.test(raw)) summary.push(`— Si no${raw.slice(4).trim() ? `, ${q(raw.slice(4))}` : ''}:`)
+      if (fragment) {
+        const lead = ({ alt: 'Si', opt: 'Opcionalmente, si', loop: 'Repetir mientras', par: 'En paralelo', break: 'Interrumpir si', critical: 'Sección crítica', group: 'Grupo' } as Record<string, string>)[fragment[1]]
+        steps.push({ kind: 'group', depth, text: `${lead}${fragment[2] ? ` ${q(fragment[2])}` : ''}:` })
+        depth += 1
+      } else if (/^else\b/.test(raw)) {
+        steps.push({ kind: 'group', depth: Math.max(0, depth - 1), text: `Si no${raw.slice(4).trim() ? `, ${q(raw.slice(4))}` : ''}:` })
+      } else if (/^end\b/.test(raw) && !/^end ?note/.test(raw)) depth = Math.max(0, depth - 1)
       continue
     }
     step += 1
-    if (step > 18) continue
     const text = message.label.trim() ? q(message.label) : 'un mensaje'
-    if (message.from === message.to) summary.push(`${step}. ${name(message.from)} realiza ${text} internamente.`)
-    else if (message.type === 'reply') summary.push(`${step}. ${name(message.from)} responde ${text} a ${name(message.to)}.`)
-    else summary.push(`${step}. ${name(message.from)} ${message.type === 'async' ? 'envía sin esperar respuesta' : 'pide'} ${text} a ${name(message.to)}.`)
+    const sentence =
+      message.from === message.to
+        ? `${name(message.from)} realiza ${text} internamente.`
+        : message.type === 'reply'
+          ? `${name(message.from)} responde ${text} a ${name(message.to)}.`
+          : `${name(message.from)} ${message.type === 'async' ? 'envía sin esperar respuesta' : 'pide'} ${text} a ${name(message.to)}.`
+    steps.push({ kind: 'step', number: step, depth, text: sentence })
   }
-  if (step > 18) summary.push(`…y ${step - 18} mensajes más.`)
 
   for (const participant of model.participants) {
     if (!messages.some((message) => message.from === participant.id || message.to === participant.id)) {
@@ -482,7 +500,7 @@ function interpretSequence(model: SequenceModel): Interpretation {
   if (messages.length && model.participants[0] && messages[0].from !== model.participants[0].id) {
     findings.push({ level: 'info', text: `La interacción no empieza en el primer participante (${q(model.participants[0].name)}); ordenar de izquierda a derecha según quién inicia facilita la lectura.` })
   }
-  return { summary, findings }
+  return { summary, steps, findings }
 }
 
 /** Interpretación del modelo visual según su tipo. */

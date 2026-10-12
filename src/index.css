@@ -2326,6 +2326,31 @@ a:focus-visible {
 .uml-finding-warning { background: rgba(224, 96, 122, 0.1); color: #f6c1cc; }
 .uml-finding-info { background: rgba(214, 170, 98, 0.08); color: #ead3a8; }
 .uml-finding-ok { background: rgba(70, 160, 110, 0.1); color: #a9e2c2; }
+.uml-interpretation-lead { margin-bottom: 0.5rem; color: var(--text-main); font-size: 0.88rem; line-height: 1.5; }
+.uml-interpretation-subheading { margin: 0.9rem 0 0.4rem; color: var(--text-muted); font-size: 0.72rem; font-weight: 600; }
+.uml-summary-bullet { position: relative; padding-left: 0.9rem; }
+.uml-summary-bullet::before { position: absolute; left: 0.1rem; color: var(--accent-ui); content: '•'; }
+.uml-steps { display: grid; gap: 0.25rem; border-left: 1px solid rgba(166, 180, 184, 0.16); padding-left: 0.6rem; }
+.uml-step { display: flex; gap: 0.5rem; color: var(--text-main); font-size: 0.82rem; line-height: 1.45; }
+.uml-step-number {
+  flex: none;
+  min-width: 1.5rem;
+  height: 1.25rem;
+  border-radius: 0.35rem;
+  background: rgba(166, 180, 184, 0.14);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+}
+.uml-step-group { margin-top: 0.35rem; color: #e6c48c; font-size: 0.78rem; font-weight: 600; }
+.uml-more { margin-top: 0.5rem; color: var(--accent-ui); font-size: 0.75rem; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.uml-more:hover { color: var(--text-main); }
+.uml-finding-group { margin-bottom: 0.35rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+.uml-finding-group-warning { color: #f3a3b3; }
+.uml-finding-group-info { color: #e6c48c; }
+.uml-finding-group-ok { color: #8fd6ad; }
 
 /* ---- Coherencia arquitectónica entre diagramas ---- */
 .arch-tone-contradiction { --arch-bg: rgba(224, 96, 122, 0.14); --arch-fg: #f3a3b3; }

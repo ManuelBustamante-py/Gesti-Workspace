@@ -26,6 +26,7 @@ import { useHistory } from '../../../hooks/useHistory'
 import { applyPatch } from '../../../domain/uml/liveSync'
 import type { LiveConnection } from '../live'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../../lib/diagramExport'
+import { downloadDiagramReport } from '../../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
 
 interface VisualEditorProps {
@@ -65,6 +66,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, li
   const [view, setView] = useState<'canvas' | 'plantuml'>('canvas')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [downloadingReport, setDownloadingReport] = useState(false)
   const [notice, setNotice] = useState('')
   const svgRef = useRef<SVGSVGElement | null>(null)
   const controllerRef = useRef<CanvasController | null>(null)
@@ -203,7 +205,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, li
     onBack()
   }
 
-  async function exportAs(format: 'svg' | 'png' | 'puml') {
+  async function exportAs(format: 'svg' | 'png' | 'pdf' | 'puml') {
     setError('')
     try {
       if (format === 'puml') return downloadPlantUml(source, diagramFileName(name, 'puml'))
@@ -211,9 +213,15 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, li
       const graph = model as GraphModel
       const svg = canvasToSvg(svgRef.current, model.kind === 'sequence' ? null : contentBounds(graph.kind, graph.nodes, graph.edges, 30))
       if (format === 'svg') downloadSvg(svg, diagramFileName(name, 'svg'))
-      else await downloadPng(svg, diagramFileName(name, 'png'))
+      else if (format === 'png') await downloadPng(svg, diagramFileName(name, 'png'))
+      else {
+        setDownloadingReport(true)
+        await downloadDiagramReport(svg, { name: name.trim() || diagram.name, typeName: type?.name ?? diagram.kind, generatedAt: new Date(), interpretation }, diagramFileName(name, 'pdf'))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo exportar el diagrama.')
+    } finally {
+      setDownloadingReport(false)
     }
   }
 
@@ -331,6 +339,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, li
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void exportAs('svg')} className="btn-ghost px-3 py-1.5 text-sm">SVG</button>
           <button type="button" onClick={() => void exportAs('png')} className="btn-ghost px-3 py-1.5 text-sm">PNG</button>
+          <button type="button" onClick={() => void exportAs('pdf')} className="btn-ghost px-3 py-1.5 text-sm" disabled={downloadingReport} title="Informe con la imagen del diagrama y su interpretación">PDF</button>
           <button type="button" onClick={() => void exportAs('puml')} className="btn-ghost px-3 py-1.5 text-sm" title="PlantUML generado">.puml</button>
           {canEdit && (
             <>
@@ -407,7 +416,7 @@ function VisualEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack, li
         </div>
       )}
 
-      <InterpretationPanel interpretation={interpretation} />
+      <InterpretationPanel interpretation={interpretation} onDownloadReport={() => void exportAs('pdf')} downloading={downloadingReport} />
     </div>
   )
 }

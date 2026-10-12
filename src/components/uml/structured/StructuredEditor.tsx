@@ -17,6 +17,7 @@ import type { GanttModel, MindmapModel, NetworkModel, StructuredModel, TimingMod
 import { modelFromDiagram } from '../../../domain/uml/visualModel'
 import { useHistory } from '../../../hooks/useHistory'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../../lib/diagramExport'
+import { downloadDiagramReport } from '../../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
 import { applyPatch } from '../../../domain/uml/liveSync'
 import type { LiveConnection } from '../live'
@@ -46,6 +47,7 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
   const [render, setRender] = useState<RenderState>({ status: 'loading' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [downloadingReport, setDownloadingReport] = useState(false)
   const [notice, setNotice] = useState('')
   const wireRef = useRef<SVGSVGElement | null>(null)
 
@@ -142,7 +144,7 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
     onBack()
   }
 
-  async function exportAs(format: 'svg' | 'png' | 'puml') {
+  async function exportAs(format: 'svg' | 'png' | 'pdf' | 'puml') {
     setError('')
     try {
       if (format === 'puml') return downloadPlantUml(source, diagramFileName(name, 'puml'))
@@ -155,9 +157,15 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
         svg = render.svg
       }
       if (format === 'svg') downloadSvg(svg, diagramFileName(name, 'svg'))
-      else await downloadPng(svg, diagramFileName(name, 'png'))
+      else if (format === 'png') await downloadPng(svg, diagramFileName(name, 'png'))
+      else {
+        setDownloadingReport(true)
+        await downloadDiagramReport(svg, { name: name.trim() || diagram.name, typeName: type?.name ?? diagram.kind, generatedAt: new Date(), interpretation }, diagramFileName(name, 'pdf'))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo exportar el diagrama.')
+    } finally {
+      setDownloadingReport(false)
     }
   }
 
@@ -192,6 +200,7 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void exportAs('svg')} className="btn-ghost px-3 py-1.5 text-sm">SVG</button>
           <button type="button" onClick={() => void exportAs('png')} className="btn-ghost px-3 py-1.5 text-sm">PNG</button>
+          <button type="button" onClick={() => void exportAs('pdf')} className="btn-ghost px-3 py-1.5 text-sm" disabled={downloadingReport} title="Informe con la imagen del diagrama y su interpretación">PDF</button>
           <button type="button" onClick={() => void exportAs('puml')} className="btn-ghost px-3 py-1.5 text-sm" title="PlantUML generado">.puml</button>
           {canEdit && (
             <>
@@ -229,7 +238,7 @@ function StructuredEditor({ diagram, canEdit, narrow, onSaved, onDeleted, onBack
         {preview}
       </div>
 
-      <InterpretationPanel interpretation={interpretation} />
+      <InterpretationPanel interpretation={interpretation} onDownloadReport={() => void exportAs('pdf')} downloading={downloadingReport} />
     </div>
   )
 }

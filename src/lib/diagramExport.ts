@@ -23,8 +23,8 @@ export function downloadSvg(svg: string, fileName: string) {
   downloadBlob(new Blob([sanitizeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }), fileName)
 }
 
-/** PNG al doble de resolución, con fondo blanco (el SVG de PlantUML puede ser transparente). */
-export async function downloadPng(svg: string, fileName: string, scale = 2) {
+/** Dibuja el SVG en un canvas con fondo blanco (el SVG de PlantUML puede ser transparente). */
+export async function svgToCanvas(svg: string, scale = 2) {
   const { width, height } = svgSize(svg)
   const image = new Image()
   image.decoding = 'async'
@@ -39,7 +39,12 @@ export async function downloadPng(svg: string, fileName: string, scale = 2) {
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, canvas.width, canvas.height)
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return { canvas, width, height }
+}
 
+/** PNG al doble de resolución, con fondo blanco. */
+export async function downloadPng(svg: string, fileName: string, scale = 2) {
+  const { canvas } = await svgToCanvas(svg, scale)
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('No se pudo generar la imagen PNG.')
   downloadBlob(blob, fileName)
