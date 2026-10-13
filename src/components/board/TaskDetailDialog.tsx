@@ -9,6 +9,7 @@ import TaskDescription from './TaskDescription'
 import { columnStatusLabels, resolveColumnStatus } from '../../domain/columnStatus'
 import { formatDateKey } from '../../domain/dates'
 import { descriptionField } from '../../domain/description'
+import { EFFORT_SCALE, formatEffort, taskEffort } from '../../domain/effort'
 import type { BoardPerson } from '../../domain/people'
 import { priorityLabels } from '../../domain/priority'
 import type { TaskScheduleInfo } from '../../domain/schedule'
@@ -38,6 +39,12 @@ interface TaskDetailDialogProps {
   onSave: (input: TaskInput & { predecessorIds: string[] }) => Promise<boolean>
   onDelete: () => void
   onClose: () => void
+}
+
+/** Esfuerzo guardado en el campo propio (no el deducido de la descripción). */
+function savedEffort(task: Task) {
+  const value = task.effort === null || task.effort === undefined ? null : Number(task.effort)
+  return value !== null && Number.isFinite(value) ? value : null
 }
 
 function TaskDetailDialog({
@@ -71,6 +78,7 @@ function TaskDetailDialog({
     startDate: task.start_date ?? '',
     endDate: task.end_date ?? '',
     predecessorIds: task.predecessor_ids ?? [],
+    effort: savedEffort(task),
   })
   const [predecessorQuery, setPredecessorQuery] = useState('')
   const [pickingAssignees, setPickingAssignees] = useState(false)
@@ -90,7 +98,11 @@ function TaskDetailDialog({
   const predecessors = allTasks.filter((item) => (task.predecessor_ids ?? []).includes(item.id))
   const successors = allTasks.filter((item) => (item.predecessor_ids ?? []).includes(task.id))
   const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
-  const estimate = task.description ? descriptionField(task.description, 'Estimación') : null
+  const effort = taskEffort(task)
+  // Valores de la escala más el actual si no pertenece a ella (p. ej. 4 importado).
+  const effortOptions = form.effort !== null && !(EFFORT_SCALE as readonly number[]).includes(form.effort)
+    ? [...EFFORT_SCALE, form.effort].sort((left, right) => left - right)
+    : EFFORT_SCALE
 
   const query = predecessorQuery.trim().toLowerCase()
   const candidates = allTasks
@@ -100,7 +112,9 @@ function TaskDetailDialog({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const saved = await onSave(form)
+    const { effort: nextEffort, ...rest } = form
+    // El esfuerzo solo se envía si cambió: así una base sin la columna sigue guardando el resto.
+    const saved = await onSave(nextEffort !== savedEffort(task) ? { ...rest, effort: nextEffort } : rest)
     if (saved) setMode('view')
   }
 
@@ -110,7 +124,11 @@ function TaskDetailDialog({
         <span className={`status-pill status-pill-${status}`}>{columnStatusLabels[status]}</span>
         <span className={`priority-${task.priority} rounded-full px-2 py-1`}>Prioridad {priorityLabels[task.priority].toLowerCase()}</span>
         {sprint && <span className="meta-chip">{sprint}</span>}
-        {estimate && <span className="meta-chip">Peso {estimate}</span>}
+        {effort && (
+          <span className="effort-chip" title={effort.source === 'description' ? 'Tomado de la sección «Estimación» de la descripción' : 'Esfuerzo estimado'}>
+            {formatEffort(effort.value)}
+          </span>
+        )}
         {scheduleInfo?.critical && <span className="critical-chip">◆ Ruta crítica</span>}
       </div>
 
@@ -281,6 +299,37 @@ function TaskDetailDialog({
           />
         </label>
       </div>
+
+      <fieldset>
+        <legend className="field-label">Esfuerzo (puntos de historia)</legend>
+        <div className="effort-picker mt-1" role="radiogroup" aria-label="Esfuerzo">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={form.effort === null}
+            className={`effort-option ${form.effort === null ? 'effort-option-active' : ''}`}
+            onClick={() => setForm({ ...form, effort: null })}
+          >
+            Sin estimar
+          </button>
+          {effortOptions.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={form.effort === value}
+              className={`effort-option ${form.effort === value ? 'effort-option-active' : ''}`}
+              onClick={() => setForm({ ...form, effort: value })}
+            >
+              {value.toLocaleString('es-CL')}
+            </button>
+          ))}
+        </div>
+        <span className="mt-1 block text-xs text-[var(--text-muted)]">
+          Escala de planning poker: compara con otras tareas (dificultad, volumen e incertidumbre), no con horas. El burndown y el flujo acumulado lo usan para ponderar el progreso.
+          {form.effort === null && effort?.source === 'description' && ` Ahora se usa «${formatEffort(effort.value)}» de la sección «Estimación».`}
+        </span>
+      </fieldset>
 
       <label className="field-label">
         Descripción

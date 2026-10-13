@@ -29,6 +29,8 @@ export async function createBoardFromImport(importedBoard: ImportedBoard, ownerI
           title: task.title,
           description: task.description,
           priority: task.priority,
+          // Solo si viene: así una base sin la columna «effort» sigue aceptando la importación.
+          ...(task.effort !== null ? { effort: task.effort } : {}),
           startDate: task.startDate,
           endDate: task.endDate,
           number: task.activityNumber,

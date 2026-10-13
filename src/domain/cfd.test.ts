@@ -27,6 +27,26 @@ describe('buildDailyFlow', () => {
     ])
   })
 
+  it('pondera cada tarea por su peso (puntos de esfuerzo)', () => {
+    const weights: Record<string, number> = { a: 8, b: 2 }
+    const points = buildDailyFlow(
+      [
+        event('a', 'todo', '2026-10-01'),
+        event('b', 'todo', '2026-10-01'),
+        event('a', 'in_progress', '2026-10-02'),
+        event('a', 'done', '2026-10-03'),
+        event('b', 'done', '2026-10-03'),
+      ],
+      '2026-10-03',
+      (taskId) => weights[taskId],
+    )
+    expect(points.map((point) => [point.todo, point.in_progress, point.done, point.total, point.completed])).toEqual([
+      [10, 0, 0, 10, 0],
+      [2, 8, 0, 10, 0],
+      [0, 0, 10, 10, 10],
+    ])
+  })
+
   it('no cuenta como completadas las tareas creadas ya listas y descuenta las reabiertas', () => {
     const points = buildDailyFlow(
       [

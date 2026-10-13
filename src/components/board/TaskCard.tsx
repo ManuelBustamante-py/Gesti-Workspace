@@ -3,6 +3,7 @@ import { memo, type ReactNode } from 'react'
 import { formatDateKey } from '../../domain/dates'
 import type { BoardPerson } from '../../domain/people'
 import { descriptionField, descriptionSummary } from '../../domain/description'
+import { formatEffort, taskEffort } from '../../domain/effort'
 import type { ColumnStatus } from '../../domain/columnStatus'
 import type { BoardHighlight } from '../../domain/deadlines'
 import type { TaskRelation } from '../../domain/dependencies'
@@ -67,7 +68,7 @@ function TaskCard({
 }: TaskCardProps) {
   const summary = task.description ? descriptionSummary(task.description) : ''
   const sprint = task.description ? descriptionField(task.description, 'Sprint') : null
-  const estimate = task.description ? descriptionField(task.description, 'Estimación') : null
+  const effort = taskEffort(task)
 
   return (
     <article
@@ -103,7 +104,7 @@ function TaskCard({
           {priorityLabels[task.priority]}
         </span>
         {sprint && <span className="meta-chip">{sprint}</span>}
-        {estimate && <span className="meta-chip">Peso {estimate.replace(/\s*\(.*\)/, '')}</span>}
+        {effort && <span className="effort-chip" title="Esfuerzo estimado">{formatEffort(effort.value)}</span>}
         {scheduleInfo?.critical && <span className="critical-chip" title="Ruta crítica">◆ Crítica</span>}
         {deadline.overdueDays !== null && (
           <span className="overdue-chip" title={`La fecha de fin era el ${task.end_date}`}>

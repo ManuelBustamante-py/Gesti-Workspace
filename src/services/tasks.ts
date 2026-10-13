@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { isValidDateKey } from '../domain/dates'
+import { isValidEffort, MAX_EFFORT, MIN_EFFORT } from '../domain/effort'
 
 export type TaskPriority = 'low' | 'medium' | 'high'
 
@@ -18,6 +19,8 @@ export interface Task {
   completed_at?: string | null
   /** «En esta columna desde»: fecha real en que entró a su columna actual. */
   column_entered_at?: string | null
+  /** Esfuerzo en puntos (migración 20261012150000); null sin estimar. */
+  effort?: number | null
   position: number
   created_at: string
   updated_at: string
@@ -30,6 +33,11 @@ export type TaskInput = {
   startDate?: string | null
   endDate?: string | null
   predecessorIds?: string[]
+  /**
+   * Esfuerzo en puntos; null lo borra. Si no se indica (undefined) no se envía,
+   * así una base sin la columna sigue aceptando la tarea.
+   */
+  effort?: number | null
   /** Solo al crear: número de actividad explícito (importación). */
   number?: number
   /** Solo al crear (importación): «Completada el» y «En esta columna desde». */
@@ -40,10 +48,13 @@ export type TaskInput = {
 export const NO_PERMISSION_MESSAGE =
   'No tienes permiso para modificar este elemento o ya no existe.'
 
-function validateTaskInput({ title, startDate, endDate }: TaskInput) {
+function validateTaskInput({ title, startDate, endDate, effort }: TaskInput) {
   const trimmedTitle = title.trim()
   if (!trimmedTitle) {
     throw new Error('La tarea debe tener un título.')
+  }
+  if (effort !== undefined && effort !== null && !isValidEffort(effort)) {
+    throw new Error(`El esfuerzo debe estar entre ${MIN_EFFORT} y ${MAX_EFFORT} puntos.`)
   }
   for (const value of [startDate, endDate]) {
     if (value && !isValidDateKey(value)) {
@@ -64,7 +75,16 @@ function taskRow(input: TaskInput) {
     start_date: input.startDate || null,
     end_date: input.endDate || null,
     predecessor_ids: input.predecessorIds ?? [],
+    ...(input.effort !== undefined ? { effort: input.effort } : {}),
   }
+}
+
+const EFFORT_MIGRATION_MESSAGE = 'Para registrar el esfuerzo aplica la migración 20261012150000_task_effort.sql en Supabase.'
+
+/** Error de una base sin la columna «effort»: se explica qué migración falta. */
+function effortError(error: { message: string }, input: TaskInput | TaskInput[]) {
+  const sent = Array.isArray(input) ? input.some((item) => item.effort !== undefined) : input.effort !== undefined
+  return sent && error.message.includes('effort') ? new Error(EFFORT_MIGRATION_MESSAGE) : error
 }
 
 async function nextTaskPosition(columnId: string) {
@@ -93,7 +113,7 @@ export async function createTask(columnId: string, input: TaskInput) {
     .single()
 
   if (error) {
-    throw error
+    throw effortError(error, input)
   }
 
   return data as Task
@@ -129,7 +149,7 @@ export async function createTasks(columnId: string, inputs: TaskInput[]) {
   }
 
   if (error) {
-    throw error
+    throw effortError(error, inputs)
   }
 
   return (data as Task[]).sort((left, right) => left.position - right.position)
@@ -145,7 +165,7 @@ export async function updateTask(id: string, input: TaskInput) {
     .select()
 
   if (error) {
-    throw error
+    throw effortError(error, input)
   }
   if (!data || data.length === 0) {
     throw new Error(NO_PERMISSION_MESSAGE)

@@ -685,6 +685,16 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+.effort-chip {
+  border: 1px solid rgba(91, 142, 224, 0.35);
+  border-radius: 999px;
+  background: rgba(91, 142, 224, 0.12);
+  padding: 0.1rem 0.5rem;
+  color: #a9c4ef;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .critical-chip {
   border-radius: 999px;
   background: rgba(224, 96, 122, 0.15);
@@ -1794,15 +1804,70 @@ a:focus-visible {
 .flow-risk-success { border-color: rgba(46, 154, 102, 0.4); background: rgba(46, 154, 102, 0.1); }
 .flow-risk-info { border-color: rgba(166, 180, 184, 0.3); background: rgba(166, 180, 184, 0.07); }
 
-.flow-metrics { display: grid; gap: 0.75rem; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.flow-metrics { display: grid; gap: 0.75rem; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.flow-zoom-preset:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- Burndown ----
+   Real: azul sólido; ideal: gris discontinuo (referencia, no dato);
+   proyección: el mismo azul, discontinuo. Validado sobre el fondo #1b2023. */
+.burndown-actual { fill: none; stroke: #5b8ee0; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.burndown-ideal { fill: none; stroke: #6b7578; stroke-width: 2; stroke-dasharray: 7 5; }
+.burndown-projection { stroke: #5b8ee0; stroke-width: 2; stroke-dasharray: 5 5; stroke-linecap: round; opacity: 0.85; }
+.burndown-dot { fill: #5b8ee0; stroke: #1b2023; stroke-width: 2; }
+.burndown-dot-active { fill: #a9c4ef; }
+.burndown-finish-dot { fill: #1b2023; stroke: #5b8ee0; stroke-width: 2; }
+.burndown-scope-mark { fill: #d6aa62; stroke: #1b2023; stroke-width: 1.5; }
+.burndown-offday { fill: rgba(255, 255, 255, 0.025); }
+.burndown-ideal-label { fill: var(--text-muted); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: rgba(0, 0, 0, 0.45); stroke-width: 3px; }
+.burndown-tooltip { min-width: 12rem; }
+.burndown-behind { margin-left: 0.25rem; color: #f3a3b3; font-weight: 600; }
+.burndown-ahead { margin-left: 0.25rem; color: #74c99d; font-weight: 600; }
+.burndown-key-actual { background: #5b8ee0; }
+.burndown-key-ideal { background: #6b7578; }
+.burndown-key-projection { background: repeating-linear-gradient(90deg, #5b8ee0 0 3px, transparent 3px 5px); }
+.burndown-swatch-actual { border-color: #5b8ee0; }
+.burndown-swatch-ideal { border-top-style: dashed; border-color: #6b7578; }
+.burndown-swatch-projection { border-top-style: dotted; border-color: #5b8ee0; }
+.burndown-swatch-scope { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid #d6aa62; }
+.burndown-swatch-offday { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); }
+
+/* ---- Esfuerzo: cobertura y selector ---- */
+.effort-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  border: 1px solid rgba(166, 180, 184, 0.16);
+  border-radius: 0.875rem;
+  background: rgba(166, 180, 184, 0.05);
+  padding: 0.75rem 1rem;
+}
+.effort-meter { height: 4px; max-width: 28rem; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+.effort-meter span { display: block; height: 100%; border-radius: 999px; background: #5b8ee0; }
+.effort-picker { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.effort-option {
+  min-width: 2.5rem;
+  height: 2.25rem;
+  border: 1px solid rgba(166, 180, 184, 0.2);
+  border-radius: 0.5rem;
+  background: rgba(166, 180, 184, 0.06);
+  padding: 0 0.7rem;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.effort-option:hover { border-color: rgba(166, 180, 184, 0.45); }
+.effort-option:focus-visible { outline: 2px solid var(--accent-mint); outline-offset: 2px; }
+.effort-option-active { border-color: #5b8ee0; background: rgba(91, 142, 224, 0.2); color: #fff; }
 
 .flow-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .flow-table th, .flow-table td { border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding: 0.5rem 0.75rem; text-align: right; }
 .flow-table th:first-child { text-align: left; font-weight: 500; }
 .flow-table thead th { color: var(--text-muted); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; }
 
-@media (max-width: 1099px) {
-  .flow-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1399px) {
+  .flow-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 767px) {

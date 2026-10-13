@@ -41,11 +41,15 @@ export const MIN_THROUGHPUT_DAYS = 7
 /** Días hacia atrás con los que se compara el trabajo en curso (WIP). */
 export const WIP_TREND_DAYS = 14
 
+const round1 = (value: number) => Math.round(value * 10) / 10
+
 /**
- * Serie diaria: cuántas tareas había en cada estado al final de cada día, desde
+ * Serie diaria: cuánto trabajo había en cada estado al final de cada día, desde
  * el primer evento hasta `endDay`. Los días se toman en la zona horaria local.
+ * Sin `weightOf` cada tarea vale 1 (se cuentan tareas); con él, cada tarea
+ * aporta su peso (p. ej. sus puntos de esfuerzo) a su estado y a lo completado.
  */
-export function buildDailyFlow(events: StatusEvent[], endDay: string): FlowPoint[] {
+export function buildDailyFlow(events: StatusEvent[], endDay: string, weightOf: (taskId: string) => number = () => 1): FlowPoint[] {
   if (events.length === 0) return []
   // Orden estable: a igual hora se respeta el orden original de los eventos.
   const sorted = events
@@ -64,19 +68,25 @@ export function buildDailyFlow(events: StatusEvent[], endDay: string): FlowPoint
     while (index < sorted.length && dayOf(sorted[index]) <= day) {
       const event = sorted[index]
       const previous = current.get(event.task_id)
+      const weight = weightOf(event.task_id)
       if (event.status === 'removed') {
         current.delete(event.task_id)
       } else {
-        if (event.status === 'done' && previous && previous !== 'done') completed += 1
-        if (previous === 'done' && event.status !== 'done') completed -= 1
+        if (event.status === 'done' && previous && previous !== 'done') completed += weight
+        if (previous === 'done' && event.status !== 'done') completed -= weight
         current.set(event.task_id, event.status)
       }
       index += 1
     }
-    const point: FlowPoint = { day, todo: 0, in_progress: 0, done: 0, total: current.size, completed }
-    current.forEach((status) => {
-      point[status] += 1
+    const point: FlowPoint = { day, todo: 0, in_progress: 0, done: 0, total: 0, completed: round1(completed) }
+    current.forEach((status, taskId) => {
+      point[status] += weightOf(taskId)
     })
+    // Redondeo a un decimal: sumar pesos fraccionarios acumula error de coma flotante.
+    point.todo = round1(point.todo)
+    point.in_progress = round1(point.in_progress)
+    point.done = round1(point.done)
+    point.total = round1(point.todo + point.in_progress + point.done)
     points.push(point)
   }
   return points
@@ -155,14 +165,14 @@ export type FlowForecast = {
   today: string
   current: FlowPoint
   remaining: number
-  /** Tareas completadas por semana (neto) en la ventana medida. */
+  /** Trabajo completado por semana (neto) en la ventana medida, en la unidad de la serie. */
   throughputPerWeek: number
   windowDays: number
   projectedFinish: string | null
   deadline: string | null
   /** Positivo: días de retraso proyectado; negativo: días de margen. */
   daysLate: number | null
-  /** Tareas por semana necesarias para cumplir la fecha límite. */
+  /** Trabajo por semana necesario para cumplir la fecha límite. */
   requiredPerWeek: number | null
   /** Tiempo de ciclo aproximado (ley de Little): WIP / throughput, en días. */
   cycleTimeDays: number | null
@@ -186,7 +196,7 @@ export function computeForecast(points: FlowPoint[], deadline: string | null): F
     points.slice(-windowDays).reduce((total, point) => total + point.completed, 0),
   )
   const perDay = completedInWindow / Math.max(windowDays, MIN_THROUGHPUT_DAYS)
-  const remaining = current.total - current.done
+  const remaining = round1(current.total - current.done)
 
   let projectedFinish: string | null = null
   if (remaining === 0) projectedFinish = today

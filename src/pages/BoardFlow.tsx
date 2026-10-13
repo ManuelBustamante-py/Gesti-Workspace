@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import BurndownChart from '../components/flow/BurndownChart'
 import FlowChart from '../components/flow/FlowChart'
 import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
@@ -18,21 +19,35 @@ import {
   type StatusDate,
   type StatusEvent,
 } from '../domain/cfd'
+import { buildBurndown, burndownStart, type Burndown } from '../domain/burndown'
 import { resolveColumnStatus } from '../domain/columnStatus'
 import { formatDateKey, todayKey, weekdayNumber } from '../domain/dates'
+import { effortWeights } from '../domain/effort'
+import { boardWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
 import { getBoardStatusEvents } from '../services/flowHistory'
 
 /** Historial máximo mostrado: 26 semanas. */
 const MAX_HISTORY_DAYS = 182
 
+/** Unidad en que se mide el trabajo: puntos de esfuerzo o cantidad de tareas. */
+type FlowUnit = 'points' | 'tasks'
+type FlowView = 'burndown' | 'cfd'
+
+const UNIT_LABELS: Record<FlowUnit, { short: string; long: string }> = {
+  points: { short: 'pts', long: 'puntos' },
+  tasks: { short: 'tareas', long: 'tareas' },
+}
+
 const number = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
 const longDate = (day: string) => formatDateKey(day, { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** committed: el plazo es el fin comprometido del tablero y no el fin más tardío del Gantt. */
-function riskMessage(forecast: FlowForecast, committed: boolean) {
+function riskMessage(forecast: FlowForecast, committed: boolean, unit: FlowUnit) {
   const deadlineName = committed ? 'fin comprometido' : 'fin planificado en el Gantt'
-  const pace = `${number.format(forecast.throughputPerWeek)} tareas/semana`
+  const { short, long } = UNIT_LABELS[unit]
+  const pace = `${number.format(forecast.throughputPerWeek)} ${short}/semana`
+  const remaining = `${number.format(forecast.remaining)} ${long}`
   switch (forecast.risk) {
     case 'complete':
       return { tone: 'success', icon: '🏆', title: 'Proyecto completado', text: 'Todas las tareas del tablero están en «Listo».' }
@@ -41,21 +56,21 @@ function riskMessage(forecast: FlowForecast, committed: boolean) {
         tone: 'danger',
         icon: '⛔',
         title: committed ? 'Fin comprometido vencido' : 'Fin planificado vencido',
-        text: `${committed ? 'El fin comprometido era' : 'El Gantt terminaba'} el ${longDate(forecast.deadline!)} y aún quedan ${forecast.remaining} tarea(s) por completar${forecast.projectedFinish ? `. Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish)}.` : '.'}`,
+        text: `${committed ? 'El fin comprometido era' : 'El Gantt terminaba'} el ${longDate(forecast.deadline!)} y aún quedan ${remaining} por completar${forecast.projectedFinish ? `. Al ritmo actual (${pace}) terminaría el ${longDate(forecast.projectedFinish)}.` : '.'}`,
       }
     case 'at_risk':
       return {
         tone: 'danger',
         icon: '⚠',
         title: `Riesgo de retraso: ${forecast.daysLate} día(s)`,
-        text: `Al ritmo actual (${pace}) el proyecto terminaría el ${longDate(forecast.projectedFinish!)}, después del ${deadlineName} (${longDate(forecast.deadline!)}).${forecast.requiredPerWeek ? ` Para cumplir se necesitan ${number.format(forecast.requiredPerWeek)} tareas/semana.` : ''}`,
+        text: `Al ritmo actual (${pace}) el proyecto terminaría el ${longDate(forecast.projectedFinish!)}, después del ${deadlineName} (${longDate(forecast.deadline!)}).${forecast.requiredPerWeek ? ` Para cumplir se necesitan ${number.format(forecast.requiredPerWeek)} ${short}/semana.` : ''}`,
       }
     case 'no_velocity':
       return {
         tone: 'warning',
         icon: '⚠',
         title: 'Sin velocidad medible',
-        text: `No se completó ninguna tarea en los últimos ${THROUGHPUT_WINDOW_DAYS} días, así que no es posible proyectar la entrega. Quedan ${forecast.remaining} tarea(s)${forecast.deadline ? ` y el ${deadlineName} es el ${longDate(forecast.deadline)}` : ''}.`,
+        text: `No se completó ninguna tarea en los últimos ${THROUGHPUT_WINDOW_DAYS} días, así que no es posible proyectar la entrega. Quedan ${remaining}${forecast.deadline ? ` y el ${deadlineName} es el ${longDate(forecast.deadline)}` : ''}.`,
       }
     case 'no_deadline':
       return {
@@ -87,6 +102,9 @@ function BoardFlow() {
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [eventsError, setEventsError] = useState('')
   const [showTable, setShowTable] = useState(false)
+  const [view, setView] = useState<FlowView>('burndown')
+  // null: se elige sola (puntos si hay alguna tarea estimada).
+  const [unitChoice, setUnitChoice] = useState<FlowUnit | null>(null)
 
   useEffect(() => {
     if (!boardId || !user) return
@@ -151,17 +169,24 @@ function BoardFlow() {
   const confirmedCount = Object.keys(statusDates).length
   // El fin comprometido del tablero manda; sin él, el fin más tardío de las tareas (Gantt).
   const committed = Boolean(board?.end_date)
-  const deadline = useMemo(
-    () => board?.end_date ?? ganttDeadline(Object.values(tasksByColumn).flat()),
-    [board?.end_date, tasksByColumn],
-  )
+  const allTasks = useMemo(() => Object.values(tasksByColumn).flat(), [tasksByColumn])
+  const deadline = useMemo(() => board?.end_date ?? ganttDeadline(allTasks), [board?.end_date, allTasks])
+  // Esfuerzo: cada tarea pesa sus puntos; las sin estimar, el promedio de las estimadas.
+  const effort = useMemo(() => effortWeights(allTasks), [allTasks])
+  const unit: FlowUnit = unitChoice ?? (effort.estimated > 0 ? 'points' : 'tasks')
+  const unitLabel = UNIT_LABELS[unit]
   const today = todayKey()
-  const allPoints = useMemo(
-    () => buildDailyFlow(applyStatusDates(events, statusDates), today),
-    [statusDates, events, today],
-  )
+  const allPoints = useMemo(() => {
+    const weightOf = unit === 'points' ? (taskId: string) => effort.weights.get(taskId) ?? effort.fallback : undefined
+    return buildDailyFlow(applyStatusDates(events, statusDates), today, weightOf)
+  }, [statusDates, events, today, unit, effort])
   const forecast = useMemo(() => computeForecast(allPoints, deadline), [allPoints, deadline])
   const points = useMemo(() => allPoints.slice(-MAX_HISTORY_DAYS), [allPoints])
+  const workingDays = boardWorkingDays(board)
+  const burndown = useMemo<Burndown | null>(() => {
+    const start = burndownStart(points, board?.start_date)
+    return start ? buildBurndown(points, { start, deadline, workingDays }) : null
+  }, [points, board?.start_date, deadline, workingDays])
   const weeklyRows = useMemo(
     () => points.filter((point, index) => weekdayNumber(point.day) === 2 || index === points.length - 1).reverse(),
     [points],
@@ -180,7 +205,11 @@ function BoardFlow() {
     )
   }
 
-  const risk = forecast ? riskMessage(forecast, committed) : null
+  const risk = forecast ? riskMessage(forecast, committed, unit) : null
+  const deadlineName = committed ? 'Fin comprometido' : 'Fin planificado (Gantt)'
+  const unestimated = effort.total - effort.estimated
+  const donePercent = forecast && forecast.current.total > 0 ? Math.round((forecast.current.done / forecast.current.total) * 100) : 0
+  const behind = burndown?.deviation !== null && burndown?.deviation !== undefined && burndown.deviation > 0
 
   return (
     <main className="min-h-screen bg-[var(--bg-main)] px-3 py-4 text-slate-100 sm:px-6 sm:py-7">
@@ -194,7 +223,7 @@ function BoardFlow() {
               <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: board.color }} />
               <h1 className="min-w-0 break-words text-2xl font-semibold text-white sm:text-3xl">{board.name}</h1>
             </div>
-            <p className="mt-2 text-sm text-slate-400">Diagrama de flujo acumulado (CFD) con proyección de entrega</p>
+            <p className="mt-2 text-sm text-slate-400">Burndown y flujo acumulado (CFD) con proyección de entrega</p>
           </div>
           <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-4 py-2 text-sm">Diagrama Gantt</Link>
         </header>
@@ -228,7 +257,7 @@ function BoardFlow() {
                 <div className="min-w-0">
                   <h2 className="font-semibold text-white">Posible cuello de botella</h2>
                   <p className="mt-1 text-sm text-[var(--text-main)]">
-                    El trabajo en progreso pasó de {forecast.wipBefore} a {forecast.wipNow} tareas en {WIP_TREND_DAYS} días sin que aumente al mismo ritmo lo completado. La banda «En progreso» se está ensanchando: revisa bloqueos antes de que afecten al Gantt.
+                    El trabajo en progreso pasó de {number.format(forecast.wipBefore)} a {number.format(forecast.wipNow)} {unitLabel.long} en {WIP_TREND_DAYS} días sin que aumente al mismo ritmo lo completado. La banda «En progreso» se está ensanchando: revisa bloqueos antes de que afecten al Gantt.
                   </p>
                 </div>
               </section>
@@ -236,16 +265,32 @@ function BoardFlow() {
 
             <div className="flow-metrics mt-4">
               <div className="stat-tile">
-                <span className="stat-value">{number.format(forecast.throughputPerWeek)}</span>
-                <span className="stat-label">Tareas/semana · últimos {forecast.windowDays} días</span>
+                <span className="stat-value">{donePercent} %</span>
+                <span className="stat-label">Completado · {number.format(forecast.current.done)} de {number.format(forecast.current.total)} {unitLabel.short}</span>
               </div>
               <div className="stat-tile">
-                <span className="stat-value">{forecast.remaining}</span>
-                <span className="stat-label">Restantes de {forecast.current.total}</span>
+                <span className="stat-value">{number.format(forecast.remaining)}</span>
+                <span className="stat-label">{unitLabel.short} restantes{burndown && burndown.scopeAdded !== 0 ? ` · alcance ${burndown.scopeAdded > 0 ? '+' : '−'}${number.format(Math.abs(burndown.scopeAdded))}` : ''}</span>
+              </div>
+              <div className={`stat-tile ${behind ? 'stat-tile-alert' : ''}`}>
+                <span className="stat-value">
+                  {burndown?.deviation !== null && burndown?.deviation !== undefined
+                    ? `${burndown.deviation > 0 ? '+' : burndown.deviation < 0 ? '−' : ''}${number.format(Math.abs(burndown.deviation))}`
+                    : '—'}
+                </span>
+                <span className="stat-label">
+                  {burndown?.deviation === null || burndown?.deviation === undefined
+                    ? 'Vs. línea ideal · sin plazo'
+                    : burndown.deviation > 0 ? `${unitLabel.short} por encima del ideal` : burndown.deviation < 0 ? `${unitLabel.short} de adelanto vs. ideal` : 'Justo en la línea ideal'}
+                </span>
+              </div>
+              <div className="stat-tile">
+                <span className="stat-value">{number.format(forecast.throughputPerWeek)}</span>
+                <span className="stat-label">{unitLabel.short}/semana · últimos {forecast.windowDays} días</span>
               </div>
               <div className={`stat-tile ${forecast.bottleneck ? 'stat-tile-alert' : ''}`}>
-                <span className="stat-value">{forecast.wipNow}</span>
-                <span className="stat-label">En progreso · hace {WIP_TREND_DAYS} días: {forecast.wipBefore}</span>
+                <span className="stat-value">{number.format(forecast.wipNow)}</span>
+                <span className="stat-label">{unitLabel.short} en progreso · hace {WIP_TREND_DAYS} días: {number.format(forecast.wipBefore)}</span>
               </div>
               <div className="stat-tile">
                 <span className="stat-value">{forecast.cycleTimeDays !== null ? `${number.format(forecast.cycleTimeDays)} d` : '—'}</span>
@@ -257,29 +302,94 @@ function BoardFlow() {
               </div>
               <div className="stat-tile">
                 <span className="stat-value text-lg">{forecast.deadline ? formatDateKey(forecast.deadline, { day: 'numeric', month: 'short' }) : '—'}</span>
-                <span className="stat-label">{committed ? 'Fin comprometido' : 'Fin planificado (Gantt)'}</span>
+                <span className="stat-label">
+                  {deadlineName}{burndown?.workingDaysLeft ? ` · ${burndown.workingDaysLeft} días hábiles` : ''}
+                </span>
               </div>
             </div>
+
+            <section className="effort-coverage mt-4" aria-label="Cobertura de la estimación">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-[var(--text-main)]">
+                  {effort.estimated === 0 ? (
+                    <>Ninguna tarea tiene esfuerzo estimado: el progreso se mide contando tareas. Asigna puntos desde «Editar» en cada tarea para un cálculo más preciso.</>
+                  ) : (
+                    <>
+                      <strong className="text-white">{effort.estimated} de {effort.total}</strong> tareas con esfuerzo estimado ({number.format(effort.estimatedPoints)} pts).
+                      {unestimated > 0 && ` Las ${unestimated} sin estimar cuentan como ${number.format(effort.fallback)} pts (el promedio).`}
+                    </>
+                  )}
+                </p>
+                {effort.total > 0 && (
+                  <div className="effort-meter mt-2" role="meter" aria-valuemin={0} aria-valuemax={effort.total} aria-valuenow={effort.estimated} aria-label="Tareas estimadas">
+                    <span style={{ width: `${(effort.estimated / effort.total) * 100}%` }} />
+                  </div>
+                )}
+              </div>
+              <div className="flow-zoom-group" role="group" aria-label="Unidad de medida">
+                {(['points', 'tasks'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`flow-zoom-preset ${unit === option ? 'flow-zoom-preset-active' : ''}`}
+                    aria-pressed={unit === option}
+                    disabled={option === 'points' && effort.estimated === 0}
+                    onClick={() => setUnitChoice(option)}
+                  >
+                    {option === 'points' ? 'Puntos de esfuerzo' : 'Tareas'}
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <section className="glass-panel mt-4 overflow-hidden rounded-2xl">
               <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-white">Flujo acumulado</h2>
+                  <h2 className="text-lg font-semibold text-white">{view === 'burndown' ? 'Burndown' : 'Flujo acumulado'}</h2>
                   <p className="mt-1 text-sm text-slate-400">
-                    Cada banda es la cantidad de tareas en ese estado cada día. Si «En progreso» se ensancha, el trabajo se está acumulando. A la derecha de «Hoy», la línea discontinua proyecta lo completado al ritmo real del equipo.
+                    {view === 'burndown'
+                      ? `Trabajo restante (${unitLabel.long}) cada día frente a la línea ideal, que baja en días hábiles desde el inicio hasta el ${deadlineName.toLowerCase()}. Si la línea real queda por encima, el equipo va atrasado; los triángulos marcan trabajo añadido.`
+                      : `Cada banda es el trabajo (${unitLabel.long}) en ese estado cada día. Si «En progreso» se ensancha, el trabajo se está acumulando. A la derecha de «Hoy», la línea discontinua proyecta lo completado al ritmo real del equipo.`}
                   </p>
                 </div>
-                <button type="button" onClick={() => setShowTable((value) => !value)} className="btn-ghost px-3 py-1.5 text-sm" aria-pressed={showTable}>
-                  {showTable ? 'Ver gráfico' : 'Ver tabla'}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flow-zoom-group" role="group" aria-label="Tipo de gráfico">
+                    {([['burndown', 'Burndown'], ['cfd', 'Flujo acumulado']] as const).map(([option, label]) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`flow-zoom-preset ${view === option ? 'flow-zoom-preset-active' : ''}`}
+                        aria-pressed={view === option}
+                        onClick={() => setView(option)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setShowTable((value) => !value)} className="btn-ghost px-3 py-1.5 text-sm" aria-pressed={showTable}>
+                    {showTable ? 'Ver gráfico' : 'Ver tabla'}
+                  </button>
+                </div>
               </div>
 
               <ul className="flow-legend" aria-label="Leyenda">
-                {(['todo', 'in_progress', 'done'] as const).map((status) => (
-                  <li key={status}><span className={`flow-swatch flow-key-${status}`} aria-hidden="true" />{flowLabels[status]}</li>
-                ))}
-                <li><span className="flow-swatch-line flow-swatch-projection" aria-hidden="true" />Proyección de lo completado</li>
-                <li><span className="flow-swatch-line flow-swatch-deadline" aria-hidden="true" />{committed ? 'Fin comprometido' : 'Fin planificado (Gantt)'}</li>
+                {view === 'burndown' ? (
+                  <>
+                    <li><span className="flow-swatch-line burndown-swatch-actual" aria-hidden="true" />Restante real</li>
+                    <li><span className="flow-swatch-line burndown-swatch-ideal" aria-hidden="true" />Línea ideal</li>
+                    <li><span className="flow-swatch-line burndown-swatch-projection" aria-hidden="true" />Proyección al ritmo actual</li>
+                    <li><span className="burndown-swatch-scope" aria-hidden="true" />Alcance añadido</li>
+                    {workingDays.length < 7 && <li><span className="flow-swatch burndown-swatch-offday" aria-hidden="true" />Día no hábil</li>}
+                  </>
+                ) : (
+                  <>
+                    {(['todo', 'in_progress', 'done'] as const).map((status) => (
+                      <li key={status}><span className={`flow-swatch flow-key-${status}`} aria-hidden="true" />{flowLabels[status]}</li>
+                    ))}
+                    <li><span className="flow-swatch-line flow-swatch-projection" aria-hidden="true" />Proyección de lo completado</li>
+                  </>
+                )}
+                <li><span className="flow-swatch-line flow-swatch-deadline" aria-hidden="true" />{deadlineName}</li>
                 <li><span className="flow-swatch-line flow-swatch-today" aria-hidden="true" />Hoy</li>
               </ul>
 
@@ -287,28 +397,51 @@ function BoardFlow() {
                 {showTable ? (
                   <div className="overflow-x-auto">
                     <table className="flow-table">
-                      <caption className="sr-only">Tareas por estado al inicio de cada semana</caption>
+                      <caption className="sr-only">Trabajo por estado al inicio de cada semana, en {unitLabel.long}</caption>
                       <thead>
-                        <tr><th scope="col">Fecha</th><th scope="col">Listo</th><th scope="col">En progreso</th><th scope="col">Por hacer</th><th scope="col">Total</th></tr>
+                        <tr>
+                          <th scope="col">Fecha</th><th scope="col">Listo</th><th scope="col">En progreso</th><th scope="col">Por hacer</th><th scope="col">Total</th>
+                          <th scope="col">Restante</th><th scope="col">Ideal</th>
+                        </tr>
                       </thead>
                       <tbody>
-                        {weeklyRows.map((point) => (
-                          <tr key={point.day}>
-                            <th scope="row">{formatDateKey(point.day)}{point.day === today ? ' (hoy)' : ''}</th>
-                            <td>{point.done}</td><td>{point.in_progress}</td><td>{point.todo}</td><td>{point.total}</td>
-                          </tr>
-                        ))}
+                        {weeklyRows.map((point) => {
+                          const ideal = burndown && point.day >= burndown.start ? burndown.idealAt(point.day) : null
+                          return (
+                            <tr key={point.day}>
+                              <th scope="row">{formatDateKey(point.day)}{point.day === today ? ' (hoy)' : ''}</th>
+                              <td>{number.format(point.done)}</td><td>{number.format(point.in_progress)}</td><td>{number.format(point.todo)}</td><td>{number.format(point.total)}</td>
+                              <td>{number.format(Math.round((point.total - point.done) * 10) / 10)}</td><td>{ideal !== null ? number.format(ideal) : '—'}</td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
                 ) : chartWidth > 0 && points.length > 0 ? (
-                  <FlowChart points={points} forecast={forecast} width={chartWidth} narrow={narrow} deadlineLabel={committed ? 'Fin comprometido' : 'Fin Gantt'} />
+                  view === 'burndown' && burndown ? (
+                    <BurndownChart
+                      burndown={burndown}
+                      forecast={forecast}
+                      width={chartWidth}
+                      narrow={narrow}
+                      unit={unitLabel.short}
+                      workingDays={workingDays}
+                      deadlineLabel={committed ? 'Fin comprometido' : 'Fin Gantt'}
+                    />
+                  ) : (
+                    <FlowChart points={points} forecast={forecast} width={chartWidth} narrow={narrow} deadlineLabel={committed ? 'Fin comprometido' : 'Fin Gantt'} />
+                  )
                 ) : null}
               </div>
 
               <p className="border-t border-white/10 px-4 py-3 text-xs text-slate-500 sm:px-5">
-                Velocidad = tareas que pasaron a «Listo» desde otro estado (menos las reabiertas) en los últimos {THROUGHPUT_WINDOW_DAYS} días; las creadas o importadas ya listas no cuentan. Con menos de una semana de historial se divide igualmente por 7 días para no exagerar el ritmo.{confirmedCount > 0 && ` Se usan las fechas reales registradas («Completada el» / «En esta columna desde») de ${confirmedCount} tarea(s).`} La proyección asume que ese ritmo se mantiene y que no se agregan tareas.
-                El tiempo de ciclo se estima con la ley de Little (trabajo en progreso ÷ velocidad).
+                {unit === 'points'
+                  ? `Se mide en puntos de esfuerzo: cada tarea aporta sus puntos (campo «Esfuerzo» o la sección «Estimación» de su descripción)${unestimated > 0 ? ` y las no estimadas, el promedio (${number.format(effort.fallback)} pts)` : ''}. Así una tarea grande pesa más que una pequeña en la velocidad, lo restante y la proyección. `
+                  : 'Se mide contando tareas: todas pesan lo mismo. '}
+                Velocidad = trabajo que pasó a «Listo» desde otro estado (menos lo reabierto) en los últimos {THROUGHPUT_WINDOW_DAYS} días; lo creado o importado ya listo no cuenta. Con menos de una semana de historial se divide igualmente por 7 días para no exagerar el ritmo.{confirmedCount > 0 && ` Se usan las fechas reales registradas («Completada el» / «En esta columna desde») de ${confirmedCount} tarea(s).`} La proyección asume que ese ritmo se mantiene y que no se agrega trabajo.
+                {burndown && ` El burndown empieza el ${longDate(burndown.start)}${board.start_date && burndown.start === board.start_date ? ' (inicio del proyecto)' : ' (primer día con historial)'} con ${number.format(burndown.baseline)} ${unitLabel.short}; la línea ideal no se ajusta al alcance añadido después, para que se vea como desviación.`}
+                {' '}El tiempo de ciclo se estima con la ley de Little (trabajo en progreso ÷ velocidad).
                 {forecast.lowConfidence && ' Hay menos de 2 semanas de historial: la proyección es poco fiable todavía.'}
                 {' '}El historial anterior a la activación de esta función se reconstruyó de forma aproximada con las fechas de creación y última actualización de cada tarea.
               </p>

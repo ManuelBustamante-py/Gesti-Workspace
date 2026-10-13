@@ -105,3 +105,21 @@ describe('parseImportedRows', () => {
     expect(() => parseImportedRows([row(1, 'A', 'X', '', '2026-10-10', '2026-10-01')], 'f.xlsx')).toThrow('posterior')
   })
 })
+
+describe('parseImportedRows · esfuerzo', () => {
+  const row = (number: number, title: string, effort?: unknown) => ({
+    'N° Tarea': number,
+    Columna: 'Por hacer',
+    Tarea: title,
+    ...(effort !== undefined ? { Esfuerzo: effort } : {}),
+  })
+
+  it('importa puntos y tallas, y avisa de los valores inválidos', () => {
+    const { board, warnings } = parseImportedRows(
+      [row(1, 'A', 5), row(2, 'B', 'L'), row(3, 'C', 'mucho'), row(4, 'D')],
+      'esfuerzo.xlsx',
+    )
+    expect(board.columns[0].tasks.map((task) => task.effort)).toEqual([5, 5, null, null])
+    expect(warnings.some((warning) => warning.startsWith('Fila 4') && warning.includes('esfuerzo'))).toBe(true)
+  })
+})

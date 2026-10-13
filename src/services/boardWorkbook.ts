@@ -27,6 +27,7 @@ import {
   formatDateKey,
 } from '../domain/dates'
 import { composeDescription, splitDescriptionSections } from '../domain/description'
+import { MAX_EFFORT, MIN_EFFORT, parseEffort } from '../domain/effort'
 import { findCycle } from '../domain/dependencies'
 import { activityNumbers } from '../domain/numbering'
 import { computeSchedule } from '../domain/schedule'
@@ -44,6 +45,7 @@ export const WORKBOOK_HEADERS = [
   'Tarea',
   'Descripción',
   'Prioridad',
+  'Esfuerzo',
   'Fecha inicio',
   'Fecha fin',
   'Fecha completada',
@@ -58,6 +60,8 @@ export type ImportedTask = {
   title: string
   description: string
   priority: TaskPriority
+  /** Puntos de esfuerzo; null sin estimar. */
+  effort: number | null
   startDate: string | null
   endDate: string | null
   /** «Completada el»: solo en columnas Completado. */
@@ -170,6 +174,7 @@ type ActivityRow = {
   /** Secciones de la descripción con columna propia (título → contenido). */
   sections: Record<string, string>
   priority: string
+  effort: number | null
   start: string | null
   end: string | null
   completed: string | null
@@ -185,6 +190,7 @@ const HEADER_WIDTHS: Record<WorkbookHeader, number> = {
   Tarea: 30,
   Descripción: 34,
   Prioridad: 10,
+  Esfuerzo: 9,
   'Fecha inicio': 12,
   'Fecha fin': 12,
   'Fecha completada': 13,
@@ -253,6 +259,7 @@ async function writeActivitiesWorkbook(
     Tarea: row.title,
     Descripción: row.description,
     Prioridad: row.priority,
+    Esfuerzo: row.effort,
     'Fecha inicio': dateCell(row.start),
     'Fecha fin': dateCell(row.end),
     'Fecha completada': dateCell(row.completed),
@@ -314,6 +321,7 @@ async function writeActivitiesWorkbook(
       ['Tarea', 'Título corto de la actividad. Obligatorio.'],
       ['Descripción', 'Texto libre. Admite saltos de línea (Alt+Enter).'],
       ['Prioridad', 'Alta, Media o Baja.'],
+      ['Esfuerzo', 'Opcional: puntos de historia (1, 2, 3, 5, 8, 13, 21…) o talla (XS, S, M, L, XL). El burndown y el flujo acumulado lo usan para ponderar el progreso.'],
       ['Fecha inicio / Fecha fin', 'Fecha de Excel o texto AAAA-MM-DD o DD-MM-AAAA. La de inicio no puede ser posterior a la de fin.'],
       ['Fecha completada', 'Opcional: fecha real en que se terminó. Solo en columnas Completado; no puede ser futura. La usa el flujo acumulado (CFD).'],
       ['En columna desde', 'Opcional: fecha real en que la tarea entró a su columna. No aplica a columnas Completado; no puede ser futura.'],
@@ -345,7 +353,7 @@ export async function downloadBoardTemplate() {
   await writeActivitiesWorkbook(
     [
       {
-        number: 1, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: definir alcance', priority: 'Alta', start: '2026-12-01', end: '2026-12-11', completed: null, entered: null, predecessors: '',
+        number: 1, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: definir alcance', priority: 'Alta', effort: 5, start: '2026-12-01', end: '2026-12-11', completed: null, entered: null, predecessors: '',
         ...example('Sprint 1 · Peso 3', [
           'Como responsable del proyecto,\nquiero definir el alcance,\npara alinear al equipo.',
           '1. Alcance documentado.\n2. Validado con el cliente.',
@@ -353,12 +361,12 @@ export async function downloadBoardTemplate() {
         ]),
       },
       {
-        number: 2, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: diseñar solución', priority: 'Media', start: '2026-12-14', end: '2026-12-18', completed: null, entered: null, predecessors: '1',
+        number: 2, column: 'Por hacer', status: 'Pendiente', title: 'Ejemplo: diseñar solución', priority: 'Media', effort: 8, start: '2026-12-14', end: '2026-12-18', completed: null, entered: null, predecessors: '1',
         ...example('Reemplaza o elimina estas filas. Las columnas extra son opcionales.', []),
       },
       {
         // Fecha completada pasada: la plantilla se puede importar tal cual.
-        number: 3, column: 'Completado', status: 'Completado', title: 'Ejemplo: reunión inicial', priority: 'Baja', start: '2026-09-28', end: '2026-09-28', completed: '2026-09-28', entered: null, predecessors: '',
+        number: 3, column: 'Completado', status: 'Completado', title: 'Ejemplo: reunión inicial', priority: 'Baja', effort: 1, start: '2026-09-28', end: '2026-09-28', completed: '2026-09-28', entered: null, predecessors: '',
         ...example('', []),
       },
     ],
@@ -385,6 +393,7 @@ export async function exportBoardWorkbook(
     description: sectionColumns ? sectionColumns.rows[index].intro : task.description ?? '',
     sections: sectionColumns ? sectionColumns.rows[index].sections : {},
     priority: priorityLabel[task.priority],
+    effort: task.effort === null || task.effort === undefined ? null : Number(task.effort),
     start: task.start_date,
     end: task.end_date,
     completed: task.completed_at ?? null,
@@ -405,6 +414,7 @@ export async function exportBoardWorkbook(
       description: '',
       sections: {},
       priority: 'Media',
+      effort: null,
       start: null,
       end: null,
       completed: null,
@@ -771,6 +781,11 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
       columnEnteredAt = null
     }
 
+    const effort = parseEffort(row.Esfuerzo)
+    if (cellText(row.Esfuerzo) && effort === null) {
+      warnings.push(`${line}: el esfuerzo "${cellText(row.Esfuerzo)}" no es válido (usa puntos entre ${MIN_EFFORT} y ${MAX_EFFORT} o una talla XS–XL); se dejó sin estimar.`)
+    }
+
     const task: ImportedTask & { line: string } = {
       line,
       title,
@@ -781,6 +796,7 @@ export function parseImportedRows(rows: ImportedRow[], fileName: string): Import
           .map((key): [string, string] => [key.trim(), cellText(row[key])]),
       ),
       priority: priorityFromValue(row.Prioridad),
+      effort,
       startDate,
       endDate,
       completedAt,
