@@ -9,7 +9,8 @@ import { activityNumbers } from '../domain/numbering'
 import { priorityLabels } from '../domain/priority'
 import { computeSchedule } from '../domain/schedule'
 import { boardSchedule, describeWorkingDays } from '../domain/workSchedule'
-import { projectDeadline, type Board } from '../services/boards'
+// Solo tipos de services/: importar sus valores carga el cliente de Supabase.
+import type { Board } from '../services/boards'
 import type { BoardColumn } from '../services/columns'
 import type { Task, TaskPriority } from '../services/tasks'
 import { COLORS, PAGE_MARGIN, createPdfLayout, reportDate, type Rgb } from './pdfLayout'
@@ -68,7 +69,8 @@ export function buildBoardReport(JsPDF: typeof JsPdf, input: BoardReportInput): 
   const total = entries.length
   const percent = total ? Math.round(progressSum / total) : 0
   const critical = [...schedule.tasks.values()].filter((info) => info.critical).length
-  const plannedEnd = projectDeadline(board, latestEnd)
+  // Mismo criterio que projectDeadline: el fin comprometido o, si no hay, el del Gantt.
+  const plannedEnd = board.end_date ?? latestEnd
 
   // Encabezado
   layout.paragraph('INFORME DEL TABLERO', { size: 8, bold: true, rgb: COLORS.muted, gap: 0 })
