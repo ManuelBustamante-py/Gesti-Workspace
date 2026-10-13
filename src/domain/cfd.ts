@@ -145,6 +145,53 @@ export function applyStatusDates(events: StatusEvent[], statusDates: Record<stri
   return result
 }
 
+/**
+ * Tareas que llegaron con el tablero: su primer evento cae el primer día del
+ * historial (creación o importación inicial). Para ellas no se sabe cuándo
+ * entraron de verdad al plan.
+ */
+export function initialScopeTasks(events: StatusEvent[]) {
+  const firstDayOf = new Map<string, string>()
+  let boardFirstDay: string | null = null
+  events.forEach((event) => {
+    const day = localDateToKey(new Date(event.occurred_at))
+    const known = firstDayOf.get(event.task_id)
+    if (!known || day < known) firstDayOf.set(event.task_id, day)
+    if (!boardFirstDay || day < boardFirstDay) boardFirstDay = day
+  })
+  return new Set([...firstDayOf].filter(([, day]) => day === boardFirstDay).map(([taskId]) => taskId))
+}
+
+/**
+ * Lleva el primer evento de las tareas iniciales al comienzo de `startDay`.
+ *
+ * Sin esto, un tablero importado con fechas reales de finalización muestra el
+ * alcance «apareciendo» cada día en que se terminó una tarea (y lo pendiente el
+ * día de la importación): el burndown partiría en 0 y todo sería alcance
+ * añadido. Con el plan completo desde el inicio, el burndown baja como debe.
+ * Solo cambia cuándo entra la tarea al alcance; no cuenta trabajo completado.
+ */
+export function anchorInitialScope(events: StatusEvent[], initialTaskIds: Set<string>, startDay: string): StatusEvent[] {
+  if (initialTaskIds.size === 0) return events
+  const [year, month, day] = startDay.split('-').map(Number)
+  const anchor = new Date(year, month - 1, day, 0, 0, 1).getTime()
+
+  const firstIndex = new Map<string, number>()
+  events.forEach((event, index) => {
+    if (!initialTaskIds.has(event.task_id)) return
+    const current = firstIndex.get(event.task_id)
+    if (current === undefined || new Date(event.occurred_at).getTime() < new Date(events[current].occurred_at).getTime()) {
+      firstIndex.set(event.task_id, index)
+    }
+  })
+  const moved = new Set(firstIndex.values())
+  return events.map((event, index) =>
+    moved.has(index) && new Date(event.occurred_at).getTime() > anchor
+      ? { ...event, occurred_at: new Date(anchor).toISOString() }
+      : event,
+  )
+}
+
 /** Compatibilidad: solo fechas de finalización. */
 export function applyCompletionDates(events: StatusEvent[], completions: Record<string, string>): StatusEvent[] {
   return applyStatusDates(

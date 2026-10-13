@@ -8,11 +8,13 @@ import { useBoardData } from '../hooks/useBoardData'
 import { useElementWidth, useIsNarrow } from '../hooks/useLayout'
 import { supabase } from '../lib/supabase'
 import {
+  anchorInitialScope,
   applyStatusDates,
   buildDailyFlow,
   computeForecast,
   flowLabels,
   ganttDeadline,
+  initialScopeTasks,
   THROUGHPUT_WINDOW_DAYS,
   WIP_TREND_DAYS,
   type FlowForecast,
@@ -21,7 +23,7 @@ import {
 } from '../domain/cfd'
 import { buildBurndown, burndownStart, type Burndown } from '../domain/burndown'
 import { resolveColumnStatus } from '../domain/columnStatus'
-import { formatDateKey, todayKey, weekdayNumber } from '../domain/dates'
+import { formatDateKey, localDateToKey, todayKey, weekdayNumber } from '../domain/dates'
 import { effortWeights } from '../domain/effort'
 import { boardWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
@@ -176,10 +178,23 @@ function BoardFlow() {
   const unit: FlowUnit = unitChoice ?? (effort.estimated > 0 ? 'points' : 'tasks')
   const unitLabel = UNIT_LABELS[unit]
   const today = todayKey()
+  // Historial con fechas reales y con el plan inicial completo desde el inicio del
+  // proyecto (o desde el primer día con historial, si este es anterior).
+  const projectStart = board?.start_date ?? null
+  const datedEvents = useMemo(() => {
+    const dated = applyStatusDates(events, statusDates)
+    if (dated.length === 0) return dated
+    const firstDay = dated.reduce((min, event) => {
+      const day = localDateToKey(new Date(event.occurred_at))
+      return day < min ? day : min
+    }, localDateToKey(new Date(dated[0].occurred_at)))
+    const scopeStart = projectStart && projectStart < firstDay ? projectStart : firstDay
+    return anchorInitialScope(dated, initialScopeTasks(events), scopeStart)
+  }, [events, statusDates, projectStart])
   const allPoints = useMemo(() => {
     const weightOf = unit === 'points' ? (taskId: string) => effort.weights.get(taskId) ?? effort.fallback : undefined
-    return buildDailyFlow(applyStatusDates(events, statusDates), today, weightOf)
-  }, [statusDates, events, today, unit, effort])
+    return buildDailyFlow(datedEvents, today, weightOf)
+  }, [datedEvents, today, unit, effort])
   const forecast = useMemo(() => computeForecast(allPoints, deadline), [allPoints, deadline])
   const points = useMemo(() => allPoints.slice(-MAX_HISTORY_DAYS), [allPoints])
   const workingDays = boardWorkingDays(board)
@@ -440,7 +455,7 @@ function BoardFlow() {
                   ? `Se mide en puntos de esfuerzo: cada tarea aporta sus puntos (campo «Esfuerzo» o la sección «Estimación» de su descripción)${unestimated > 0 ? ` y las no estimadas, el promedio (${number.format(effort.fallback)} pts)` : ''}. Así una tarea grande pesa más que una pequeña en la velocidad, lo restante y la proyección. `
                   : 'Se mide contando tareas: todas pesan lo mismo. '}
                 Velocidad = trabajo que pasó a «Listo» desde otro estado (menos lo reabierto) en los últimos {THROUGHPUT_WINDOW_DAYS} días; lo creado o importado ya listo no cuenta. Con menos de una semana de historial se divide igualmente por 7 días para no exagerar el ritmo.{confirmedCount > 0 && ` Se usan las fechas reales registradas («Completada el» / «En esta columna desde») de ${confirmedCount} tarea(s).`} La proyección asume que ese ritmo se mantiene y que no se agrega trabajo.
-                {burndown && ` El burndown empieza el ${longDate(burndown.start)}${board.start_date && burndown.start === board.start_date ? ' (inicio del proyecto)' : ' (primer día con historial)'} con ${number.format(burndown.baseline)} ${unitLabel.short}; la línea ideal no se ajusta al alcance añadido después, para que se vea como desviación.`}
+                {burndown && ` El burndown empieza el ${longDate(burndown.start)}${board.start_date && burndown.start === board.start_date ? ' (inicio del proyecto)' : ' (primer día con historial)'} con ${number.format(burndown.baseline)} ${unitLabel.short}; las tareas que llegaron con el tablero (creación o importación inicial) cuentan en el alcance desde ese día, y solo lo agregado después aparece como alcance añadido. La línea ideal no se ajusta a ese alcance añadido, para que se vea como desviación.`}
                 {' '}El tiempo de ciclo se estima con la ley de Little (trabajo en progreso ÷ velocidad).
                 {forecast.lowConfidence && ' Hay menos de 2 semanas de historial: la proyección es poco fiable todavía.'}
                 {' '}El historial anterior a la activación de esta función se reconstruyó de forma aproximada con las fechas de creación y última actualización de cada tarea.

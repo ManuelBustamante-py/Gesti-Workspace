@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { applyCompletionDates, applyStatusDates, buildDailyFlow, computeForecast, ganttDeadline, type FlowPoint, type StatusEvent } from './cfd'
+import { anchorInitialScope, applyCompletionDates, applyStatusDates, buildDailyFlow, computeForecast, ganttDeadline, initialScopeTasks, type FlowPoint, type StatusEvent } from './cfd'
 import { addDays } from './dates'
 
 // Eventos a mediodía UTC: caen el mismo día en cualquier zona entre UTC-11 y UTC+11.
@@ -176,5 +176,28 @@ describe('ganttDeadline', () => {
   it('toma el fin planificado más tardío', () => {
     expect(ganttDeadline([{ end_date: '2026-11-13' }, { end_date: null }, { end_date: '2026-12-11' }])).toBe('2026-12-11')
     expect(ganttDeadline([{ end_date: null }])).toBeNull()
+  })
+})
+
+describe('anchorInitialScope', () => {
+  it('un tablero importado parte con todo su alcance y no infla lo completado', () => {
+    // Importado el 7-oct: «a» se terminó el 1-ago y «b» el 8-oct; «c» sigue pendiente.
+    const raw = [event('a', 'done', '2026-10-07'), event('b', 'done', '2026-10-07'), event('c', 'todo', '2026-10-07')]
+    const dated = applyCompletionDates(raw, { a: '2026-08-01', b: '2026-10-08' })
+    const anchored = anchorInitialScope(dated, initialScopeTasks(raw), '2026-07-22')
+    const points = buildDailyFlow(anchored, '2026-10-09')
+
+    expect(points[0]).toMatchObject({ day: '2026-07-22', total: 3, done: 0 })
+    // El total no cambia nunca: no hay alcance «añadido».
+    expect(new Set(points.map((point) => point.total))).toEqual(new Set([3]))
+    expect(points.reduce((sum, point) => sum + point.completed, 0)).toBe(2)
+    expect(points.find((point) => point.day === '2026-10-08')?.completed).toBe(1)
+  })
+
+  it('las tareas creadas después del primer día siguen contando como alcance añadido', () => {
+    const raw = [event('a', 'todo', '2026-10-01'), event('b', 'todo', '2026-10-05')]
+    expect([...initialScopeTasks(raw)]).toEqual(['a'])
+    const points = buildDailyFlow(anchorInitialScope(raw, initialScopeTasks(raw), '2026-10-01'), '2026-10-05')
+    expect(points.map((point) => point.total)).toEqual([1, 1, 1, 1, 2])
   })
 })
