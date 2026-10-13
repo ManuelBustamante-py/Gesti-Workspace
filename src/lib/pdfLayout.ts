@@ -28,7 +28,7 @@ const LEVEL_TITLES: Record<Finding['level'], string> = { warning: 'A revisar', i
  * Las fuentes estándar del PDF usan WinAnsi: tildes, ñ, «» y comillas sí;
  * flechas y símbolos no. Se reemplazan por equivalentes legibles.
  */
-const REPLACEMENTS: Record<string, string> = { '→': '->', '←': '<-', '↔': '<->', '⇒': '=>', '≈': '~', '≤': '<=', '≥': '>=', '≠': '!=', ' ': ' ' }
+const REPLACEMENTS: Record<string, string> = { '→': '->', '←': '<-', '↔': '<->', '⇒': '=>', '≈': '~', '≤': '<=', '≥': '>=', '≠': '!=', '−': '-', ' ': ' ' }
 const WIN_ANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ')
 export function pdfText(text: string) {
   return [...text.replace(/\r/g, '')]

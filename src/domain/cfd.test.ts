@@ -200,4 +200,18 @@ describe('anchorInitialScope', () => {
     const points = buildDailyFlow(anchorInitialScope(raw, initialScopeTasks(raw), '2026-10-01'), '2026-10-05')
     expect(points.map((point) => point.total)).toEqual([1, 1, 1, 1, 2])
   })
+
+  it('una tarea en progreso entra como pendiente y conserva su fecha real de «En progreso»', () => {
+    const raw = [event('a', 'in_progress', '2026-10-07')]
+    const dated = applyStatusDates(raw, { a: { status: 'in_progress', date: '2026-10-05' } })
+    const points = buildDailyFlow(anchorInitialScope(dated, initialScopeTasks(raw), '2026-10-01'), '2026-10-06')
+    expect(points.map((point) => [point.day, point.todo, point.in_progress])).toEqual([
+      ['2026-10-01', 1, 0],
+      ['2026-10-02', 1, 0],
+      ['2026-10-03', 1, 0],
+      ['2026-10-04', 1, 0],
+      ['2026-10-05', 0, 1],
+      ['2026-10-06', 0, 1],
+    ])
+  })
 })

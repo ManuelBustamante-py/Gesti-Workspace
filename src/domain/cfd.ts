@@ -163,7 +163,10 @@ export function initialScopeTasks(events: StatusEvent[]) {
 }
 
 /**
- * Lleva el primer evento de las tareas iniciales al comienzo de `startDay`.
+ * Hace que las tareas iniciales formen parte del alcance desde el comienzo de
+ * `startDay`: si su primer evento es «Por hacer» (o «Listo» sin fecha real) se
+ * adelanta; si es «En progreso», se añade antes un «Por hacer» y el paso a «En
+ * progreso» conserva su fecha (p. ej. la de «En esta columna desde»).
  *
  * Sin esto, un tablero importado con fechas reales de finalización muestra el
  * alcance «apareciendo» cada día en que se terminó una tarea (y lo pendiente el
@@ -184,12 +187,20 @@ export function anchorInitialScope(events: StatusEvent[], initialTaskIds: Set<st
       firstIndex.set(event.task_id, index)
     }
   })
-  const moved = new Set(firstIndex.values())
-  return events.map((event, index) =>
-    moved.has(index) && new Date(event.occurred_at).getTime() > anchor
-      ? { ...event, occurred_at: new Date(anchor).toISOString() }
-      : event,
-  )
+  const anchorIso = new Date(anchor).toISOString()
+  const first = new Set(firstIndex.values())
+  const result: StatusEvent[] = []
+  events.forEach((event, index) => {
+    if (!first.has(index) || new Date(event.occurred_at).getTime() <= anchor) {
+      result.push(event)
+    } else if (event.status === 'in_progress') {
+      result.push({ task_id: event.task_id, status: 'todo', occurred_at: anchorIso }, event)
+    } else {
+      // «Listo» sin fecha real: se toma como ya terminada antes del inicio, sin contar como completada.
+      result.push({ ...event, occurred_at: anchorIso })
+    }
+  })
+  return result
 }
 
 /** Compatibilidad: solo fechas de finalización. */

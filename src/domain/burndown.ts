@@ -34,6 +34,8 @@ export type Burndown = {
   deviation: number | null
   /** Días hábiles restantes hasta el plazo, hoy excluido. */
   workingDaysLeft: number | null
+  /** Trabajo que la línea ideal quema por día hábil; null sin plazo. */
+  idealPerWorkingDay: number | null
 }
 
 const round1 = (value: number) => Math.round(value * 10) / 10
@@ -106,6 +108,7 @@ export function buildBurndown(
     completedSinceStart: round1(result.reduce((sum, point) => sum + point.completed, 0)),
     deviation: last && last.ideal !== null ? round1(last.remaining - last.ideal) : null,
     workingDaysLeft: deadline ? (deadline > today ? countWorkingDays(addDays(today, 1), deadline, workingDays) : 0) : null,
+    idealPerWorkingDay: deadline && burnDays > 0 ? baseline / burnDays : null,
   }
 }
 

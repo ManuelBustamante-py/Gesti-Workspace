@@ -1,26 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 import { addDays, diffDays, formatDateKey, weekdayNumber } from '../../domain/dates'
 import { flowLabels, type FlowForecast, type FlowPoint, type FlowStatus } from '../../domain/cfd'
-import {
-  MIN_VIEW_DAYS,
-  clampView,
-  fullView,
-  isFullView,
-  niceScale,
-  panView,
-  rangeView,
-  zoomView,
-  type ChartView,
-} from '../../domain/chartZoom'
+import { niceScale } from '../../domain/chartZoom'
+import ChartZoomBar from './ChartZoomBar'
+import { useChartZoom } from './useChartZoom'
 
 /** De abajo hacia arriba, como es habitual en un CFD: lo terminado es la base. */
 const STACK: FlowStatus[] = ['done', 'in_progress', 'todo']
-
-/** Cada «+» deja visible el 60 % del rango; cada «−» lo deshace. */
-const ZOOM_IN = 0.6
-/** Píxeles que hay que arrastrar para que cuente como selección y no como clic. */
-const DRAG_THRESHOLD = 6
 
 interface FlowChartProps {
   points: FlowPoint[]
@@ -47,12 +34,6 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
  */
 function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt' }: FlowChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  // null = todo el eje. Se guarda en días, así que sobrevive a cambios de ancho.
-  const [rawView, setRawView] = useState<ChartView | null>(null)
-  const [selection, setSelection] = useState<ChartView | null>(null)
-  const dragRef = useRef<{ startPos: number; startX: number } | null>(null)
-  const svgRef = useRef<SVGSVGElement>(null)
-  const plotRef = useRef<SVGRectElement>(null)
   const clipId = `flow-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 
   const height = narrow ? 280 : 380
@@ -73,10 +54,9 @@ function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt
   }, [deadline, projectedFinish, today])
 
   const totalDays = Math.max(1, diffDays(start, end))
-  const view = rawView ? clampView(rawView, totalDays) : fullView(totalDays)
-  const zoomed = !isFullView(view, totalDays)
-  const span = view.to - view.from
   const todayPos = diffDays(start, today)
+  const zoom = useChartZoom({ totalDays, todayPos, innerWidth, hoverPos: hoverIndex, onHover: setHoverIndex })
+  const { view, zoomed, span, selection, svgRef, plotRef, plotHandlers, handleKey } = zoom
 
   const posOf = (day: string) => diffDays(start, day)
   const xPos = (pos: number) => pad.left + ((pos - view.from) / span) * innerWidth
@@ -151,125 +131,6 @@ function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt
     return { day, point, projectedDone: day > today ? projectedDoneAt(day) : null }
   })()
 
-  // --- Zoom ------------------------------------------------------------------
-
-  const updateView = (next: (current: ChartView) => ChartView) =>
-    setRawView((current) => {
-      const result = next(current ? clampView(current, totalDays) : fullView(totalDays))
-      return isFullView(result, totalDays) ? null : result
-    })
-
-  const zoomBy = (factor: number) => {
-    const anchor = hoverIndex ?? (view.from + view.to) / 2
-    updateView((currentView) => zoomView(currentView, factor, anchor, totalDays))
-  }
-  const panBy = (fraction: number) => updateView((currentView) => panView(currentView, (currentView.to - currentView.from) * fraction, totalDays))
-  const resetZoom = () => setRawView(null)
-
-  const presets: Array<{ label: string; view: ChartView | null }> = [
-    { label: 'Todo', view: null },
-    { label: 'Último mes', view: rangeView(todayPos - 30, todayPos + 7, totalDays) },
-    { label: 'Proyección', view: rangeView(todayPos - 7, totalDays, totalDays) },
-  ]
-  const sameView = (a: ChartView, b: ChartView) => Math.abs(a.from - b.from) < 0.01 && Math.abs(a.to - b.to) < 0.01
-
-  /** Posición (en días) bajo el puntero, dentro del área del gráfico. */
-  const posAt = (clientX: number, currentView: ChartView = view) => {
-    const bounds = plotRef.current?.getBoundingClientRect()
-    if (!bounds || bounds.width === 0) return currentView.from
-    const ratio = clamp((clientX - bounds.left) / bounds.width, 0, 1)
-    return currentView.from + ratio * (currentView.to - currentView.from)
-  }
-
-  // Ctrl + rueda (o pellizco en el trackpad) acerca bajo el puntero; con zoom,
-  // la rueda horizontal o Mayús + rueda desplaza. La rueda normal sigue
-  // moviendo la página. React registra la rueda como pasiva: hace falta un
-  // listener propio para poder cancelar el scroll.
-  const wheelRef = useRef<(event: WheelEvent) => void>(() => undefined)
-  useEffect(() => {
-    wheelRef.current = (event) => {
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault()
-        const factor = Math.exp(clamp(event.deltaY, -100, 100) * 0.004)
-        updateView((currentView) => zoomView(currentView, factor, posAt(event.clientX, currentView), totalDays))
-      } else if (zoomed && (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))) {
-        event.preventDefault()
-        const delta = event.deltaX !== 0 ? event.deltaX : event.deltaY
-        const bounds = plotRef.current?.getBoundingClientRect()
-        const pixels = bounds?.width || innerWidth
-        updateView((currentView) => panView(currentView, (delta / pixels) * (currentView.to - currentView.from), totalDays))
-      }
-    }
-  })
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const listener = (event: WheelEvent) => wheelRef.current(event)
-    svg.addEventListener('wheel', listener, { passive: false })
-    return () => svg.removeEventListener('wheel', listener)
-  }, [])
-
-  // --- Puntero y teclado -------------------------------------------------------
-
-  function showHover(clientX: number) {
-    setHoverIndex(clamp(Math.round(posAt(clientX)), 0, totalDays))
-  }
-
-  function handlePointerDown(event: PointerEvent<SVGRectElement>) {
-    showHover(event.clientX)
-    // Arrastrar para seleccionar un tramo solo con mouse: en pantallas táctiles
-    // el dedo sigue desplazando la página y un toque muestra el detalle del día.
-    if (event.pointerType === 'mouse' && event.button === 0) {
-      event.currentTarget.setPointerCapture(event.pointerId)
-      dragRef.current = { startPos: posAt(event.clientX), startX: event.clientX }
-    }
-  }
-
-  function handlePointerMove(event: PointerEvent<SVGRectElement>) {
-    showHover(event.clientX)
-    const drag = dragRef.current
-    if (drag && Math.abs(event.clientX - drag.startX) > DRAG_THRESHOLD) {
-      const pos = posAt(event.clientX)
-      setSelection({ from: Math.min(drag.startPos, pos), to: Math.max(drag.startPos, pos) })
-    }
-  }
-
-  function handlePointerUp(event: PointerEvent<SVGRectElement>) {
-    const drag = dragRef.current
-    dragRef.current = null
-    setSelection(null)
-    if (drag && Math.abs(event.clientX - drag.startX) > DRAG_THRESHOLD) {
-      const pos = posAt(event.clientX)
-      updateView(() => rangeView(drag.startPos, pos, totalDays))
-    }
-  }
-
-  function cancelDrag() {
-    dragRef.current = null
-    setSelection(null)
-  }
-
-  function handleKey(event: KeyboardEvent<SVGSVGElement>) {
-    const step = event.shiftKey ? 7 : 1
-    const base = hoverIndex ?? clamp(todayPos, Math.ceil(view.from), Math.floor(view.to))
-    let next: number | null = null
-    if (event.key === 'ArrowRight') next = Math.min(totalDays, base + step)
-    else if (event.key === 'ArrowLeft') next = Math.max(0, base - step)
-    else if (event.key === 'Home') next = 0
-    else if (event.key === 'End') next = totalDays
-    else if (event.key === '+' || event.key === '=') zoomBy(ZOOM_IN)
-    else if (event.key === '-' || event.key === '_') zoomBy(1 / ZOOM_IN)
-    else if (event.key === '0') resetZoom()
-    else if (event.key === 'Escape') setHoverIndex(null)
-    else return
-    event.preventDefault()
-    if (next === null) return
-    setHoverIndex(next)
-    // Si el día recorrido sale de la ventana, la ventana lo acompaña.
-    if (next < view.from) updateView((currentView) => panView(currentView, next - currentView.from, totalDays))
-    else if (next > view.to) updateView((currentView) => panView(currentView, next - currentView.to, totalDays))
-  }
-
   // Etiquetas directas al final del historial, solo si la banda es lo bastante alta.
   const lastLevel = levels[levels.length - 1]
   const directLabels = STACK.map((status) => {
@@ -282,40 +143,10 @@ function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt
   const tooltipLeft = hover ? Math.min(Math.max(x(hover.day) + 12, pad.left), width - 190) : 0
   const viewStartDay = addDays(start, Math.round(view.from))
   const viewEndDay = addDays(start, Math.round(view.to))
-  const minSpan = Math.min(MIN_VIEW_DAYS, totalDays)
 
   return (
     <div>
-      <div className="flow-zoom-bar">
-        <div className="flow-zoom-group" role="group" aria-label="Zoom del gráfico">
-          <button type="button" className="flow-zoom-button" onClick={() => zoomBy(ZOOM_IN)} disabled={span <= minSpan + 0.01} aria-label="Acercar" title="Acercar (+)">+</button>
-          <button type="button" className="flow-zoom-button" onClick={() => zoomBy(1 / ZOOM_IN)} disabled={!zoomed} aria-label="Alejar" title="Alejar (−)">−</button>
-          <button type="button" className="flow-zoom-button" onClick={() => panBy(-0.5)} disabled={!zoomed || view.from <= 0} aria-label="Ver días anteriores" title="Días anteriores">◀</button>
-          <button type="button" className="flow-zoom-button" onClick={() => panBy(0.5)} disabled={!zoomed || view.to >= totalDays} aria-label="Ver días siguientes" title="Días siguientes">▶</button>
-        </div>
-        <div className="flow-zoom-group" role="group" aria-label="Rango visible">
-          {presets.map((preset) => {
-            const active = preset.view ? zoomed && sameView(view, preset.view) : !zoomed
-            return (
-              <button
-                key={preset.label}
-                type="button"
-                className={`flow-zoom-preset ${active ? 'flow-zoom-preset-active' : ''}`}
-                aria-pressed={active}
-                onClick={() => setRawView(preset.view && !isFullView(preset.view, totalDays) ? preset.view : null)}
-              >
-                {preset.label}
-              </button>
-            )
-          })}
-        </div>
-        <span className="flow-zoom-range" aria-live="polite">
-          {shortDate(viewStartDay)} – {shortDate(viewEndDay)}
-        </span>
-        {!narrow && (
-          <span className="flow-zoom-hint">Arrastra sobre el gráfico para acercar · Ctrl + rueda · doble clic restablece</span>
-        )}
-      </div>
+      <ChartZoomBar zoom={zoom} start={start} totalDays={totalDays} narrow={narrow} />
 
       <div className="flow-chart" style={{ height }}>
         <svg
@@ -343,7 +174,7 @@ function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt
               </text>
             </g>
           ))}
-          {xTicks.map((day) => (
+          {xTicks.filter((day) => !inView(today) || day === today || Math.abs(x(day) - x(today)) >= 26).map((day) => (
             <text key={day} x={x(day)} y={height - 12} className="flow-axis-label" textAnchor="middle">
               {shortDate(day)}
             </text>
@@ -452,14 +283,7 @@ function FlowChart({ points, forecast, width, narrow, deadlineLabel = 'Fin Gantt
             height={innerHeight}
             fill="transparent"
             className="flow-plot"
-            onPointerMove={handlePointerMove}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={cancelDrag}
-            onPointerLeave={() => {
-              if (!dragRef.current) setHoverIndex(null)
-            }}
-            onDoubleClick={resetZoom}
+            {...plotHandlers}
           />
         </svg>
 

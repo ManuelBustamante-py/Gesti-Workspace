@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import BurndownChart from '../components/flow/BurndownChart'
 import FlowChart from '../components/flow/FlowChart'
+import FlowInterpretationPanel from '../components/flow/FlowInterpretationPanel'
 import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
 import { useElementWidth, useIsNarrow } from '../hooks/useLayout'
@@ -24,10 +25,13 @@ import {
 import { buildBurndown, burndownStart, type Burndown } from '../domain/burndown'
 import { resolveColumnStatus } from '../domain/columnStatus'
 import { formatDateKey, localDateToKey, todayKey, weekdayNumber } from '../domain/dates'
-import { effortWeights } from '../domain/effort'
+import { effortWeights, taskEffort } from '../domain/effort'
+import { interpretFlow, type PendingTask } from '../domain/flowInsights'
+import { activityNumbers } from '../domain/numbering'
 import { boardWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
 import { getBoardStatusEvents } from '../services/flowHistory'
+import type { FlowReportPendingTask } from '../lib/flowReport'
 
 /** Historial máximo mostrado: 26 semanas. */
 const MAX_HISTORY_DAYS = 182
@@ -107,6 +111,7 @@ function BoardFlow() {
   const [view, setView] = useState<FlowView>('burndown')
   // null: se elige sola (puntos si hay alguna tarea estimada).
   const [unitChoice, setUnitChoice] = useState<FlowUnit | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     if (!boardId || !user) return
@@ -191,21 +196,99 @@ function BoardFlow() {
     const scopeStart = projectStart && projectStart < firstDay ? projectStart : firstDay
     return anchorInitialScope(dated, initialScopeTasks(events), scopeStart)
   }, [events, statusDates, projectStart])
-  const allPoints = useMemo(() => {
-    const weightOf = unit === 'points' ? (taskId: string) => effort.weights.get(taskId) ?? effort.fallback : undefined
-    return buildDailyFlow(datedEvents, today, weightOf)
-  }, [datedEvents, today, unit, effort])
+  // Las dos series (puntos y tareas): la elegida se grafica y la otra sirve para contrastar la fecha.
+  const pointsSeries = useMemo(
+    () => (effort.estimated > 0 ? buildDailyFlow(datedEvents, today, (taskId) => effort.weights.get(taskId) ?? effort.fallback) : null),
+    [datedEvents, today, effort],
+  )
+  const tasksSeries = useMemo(() => buildDailyFlow(datedEvents, today), [datedEvents, today])
+  const allPoints = unit === 'points' && pointsSeries ? pointsSeries : tasksSeries
+  const otherPoints = unit === 'points' ? tasksSeries : pointsSeries
   const forecast = useMemo(() => computeForecast(allPoints, deadline), [allPoints, deadline])
+  const otherForecast = useMemo(() => (otherPoints ? computeForecast(otherPoints, deadline) : null), [otherPoints, deadline])
   const points = useMemo(() => allPoints.slice(-MAX_HISTORY_DAYS), [allPoints])
   const workingDays = boardWorkingDays(board)
   const burndown = useMemo<Burndown | null>(() => {
     const start = burndownStart(points, board?.start_date)
     return start ? buildBurndown(points, { start, deadline, workingDays }) : null
   }, [points, board?.start_date, deadline, workingDays])
+  const numbers = useMemo(() => activityNumbers(columns, tasksByColumn), [columns, tasksByColumn])
+  const pending = useMemo<PendingTask[]>(
+    () =>
+      columns.flatMap((column) => {
+        const status = resolveColumnStatus(column)
+        if (status === 'done') return []
+        return (tasksByColumn[column.id] ?? []).map((task) => ({
+          number: numbers.get(task.id) ?? null,
+          title: task.title,
+          weight: unit === 'points' ? effort.weights.get(task.id) ?? effort.fallback : 1,
+          status,
+          endDate: task.end_date,
+        }))
+      }),
+    [columns, tasksByColumn, numbers, unit, effort],
+  )
+  const interpretation = useMemo(
+    () =>
+      forecast
+        ? interpretFlow({
+          unit: UNIT_LABELS[unit],
+          points: allPoints,
+          forecast,
+          burndown,
+          committed,
+          pending,
+          effort: unit === 'points' ? effort : undefined,
+          alternate: otherForecast ? { label: unit === 'points' ? 'tareas' : 'puntos', projectedFinish: otherForecast.projectedFinish } : undefined,
+        })
+        : null,
+    [unit, allPoints, forecast, burndown, committed, pending, effort, otherForecast],
+  )
   const weeklyRows = useMemo(
     () => points.filter((point, index) => weekdayNumber(point.day) === 2 || index === points.length - 1).reverse(),
     [points],
   )
+
+  async function handleDownloadReport() {
+    if (!board || !forecast || !interpretation) return
+    setExporting(true)
+    try {
+      const metadata = user?.user_metadata as { full_name?: string; name?: string } | undefined
+      const reportPending: FlowReportPendingTask[] = columns.flatMap((column) => {
+        const status = resolveColumnStatus(column)
+        if (status === 'done') return []
+        return (tasksByColumn[column.id] ?? []).map((task) => ({
+          number: numbers.get(task.id) ?? null,
+          title: task.title,
+          column: column.name,
+          status,
+          effort: taskEffort(task)?.value ?? null,
+          endDate: task.end_date,
+        }))
+      })
+      // El generador (y jsPDF) se cargan solo al descargar.
+      const { downloadFlowReport } = await import('../lib/flowReport')
+      await downloadFlowReport({
+        board: { name: board.name, description: board.description },
+        author: metadata?.full_name || metadata?.name || user?.email?.split('@')[0] || '',
+        unit: UNIT_LABELS[unit],
+        measuredInPoints: unit === 'points',
+        points,
+        forecast,
+        burndown,
+        interpretation,
+        deadlineName: committed ? 'Fin comprometido' : 'Fin planificado (Gantt)',
+        workingDays,
+        effort,
+        pending: reportPending,
+        confirmedCount,
+      })
+    } catch (err) {
+      window.alert(err instanceof Error ? `No se pudo generar el informe: ${err.message}` : 'No se pudo generar el informe.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (loadingBoard) {
     return <main className="min-h-screen bg-[var(--bg-main)] p-6 text-slate-400">Cargando diagrama de flujo...</main>
@@ -240,7 +323,14 @@ function BoardFlow() {
             </div>
             <p className="mt-2 text-sm text-slate-400">Burndown y flujo acumulado (CFD) con proyección de entrega</p>
           </div>
-          <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-4 py-2 text-sm">Diagrama Gantt</Link>
+          <div className="flex flex-wrap gap-2">
+            {forecast && interpretation && (
+              <button type="button" onClick={() => void handleDownloadReport()} disabled={exporting} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+                {exporting ? 'Generando informe…' : 'Descargar informe PDF'}
+              </button>
+            )}
+            <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-4 py-2 text-sm">Diagrama Gantt</Link>
+          </div>
         </header>
 
         {!historySupported ? (
@@ -381,7 +471,7 @@ function BoardFlow() {
                       </button>
                     ))}
                   </div>
-                  <button type="button" onClick={() => setShowTable((value) => !value)} className="btn-ghost px-3 py-1.5 text-sm" aria-pressed={showTable}>
+                  <button type="button" onClick={() => setShowTable((value) => !value)} className={`flow-zoom-preset ${showTable ? 'flow-zoom-preset-active' : ''}`} aria-pressed={showTable}>
                     {showTable ? 'Ver gráfico' : 'Ver tabla'}
                   </button>
                 </div>
@@ -461,6 +551,8 @@ function BoardFlow() {
                 {' '}El historial anterior a la activación de esta función se reconstruyó de forma aproximada con las fechas de creación y última actualización de cada tarea.
               </p>
             </section>
+
+            {interpretation && <FlowInterpretationPanel interpretation={interpretation} unit={unitLabel.short} />}
           </>
         )}
       </div>

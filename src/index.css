@@ -1867,6 +1867,35 @@ a:focus-visible {
 .burndown-swatch-scope { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid #d6aa62; }
 .burndown-swatch-offday { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); }
 
+/* ---- Interpretación del avance ---- */
+.flow-diagnosis,
+.flow-insight {
+  display: flex;
+  gap: 0.75rem;
+  border: 1px solid rgba(166, 180, 184, 0.16);
+  border-left-width: 3px;
+  border-radius: 0.75rem;
+  background: rgba(166, 180, 184, 0.04);
+  padding: 0.75rem 0.9rem;
+}
+.flow-diagnosis { padding: 0.9rem 1rem; }
+.flow-insights { display: grid; gap: 0.6rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.flow-insight-icon { font-size: 1rem; line-height: 1.4; }
+.flow-insight-good { border-left-color: #2e9a66; }
+.flow-insight-good .flow-insight-icon { color: #74c99d; }
+.flow-insight-info { border-left-color: #6b7578; }
+.flow-insight-info .flow-insight-icon { color: var(--text-muted); }
+.flow-insight-warning { border-left-color: #d6aa62; }
+.flow-insight-warning .flow-insight-icon { color: #e2bd7f; }
+.flow-insight-danger { border-left-color: #e0607a; background: rgba(224, 96, 122, 0.06); }
+.flow-insight-danger .flow-insight-icon { color: #f3a3b3; }
+.flow-scenarios th[scope='row'] { padding-top: 0.6rem; padding-bottom: 0.6rem; }
+.flow-recommendations { display: grid; gap: 0.45rem; padding-left: 1.25rem; color: var(--text-main); font-size: 0.875rem; list-style: decimal; }
+.flow-recommendations li::marker { color: var(--text-muted); font-weight: 600; }
+@media (max-width: 899px) {
+  .flow-insights { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ---- Esfuerzo: cobertura y selector ---- */
 .effort-coverage {
   display: flex;
