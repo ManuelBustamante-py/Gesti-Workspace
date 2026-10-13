@@ -42,14 +42,15 @@ export function pdfText(text: string) {
 
 export const reportDate = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-export function createPdfLayout(doc: JsPdf) {
+/** `orientation`: la de las hojas que se agregan al llenar una página (vertical por defecto). */
+export function createPdfLayout(doc: JsPdf, options: { orientation?: 'portrait' | 'landscape' } = {}) {
   let pageWidth = doc.internal.pageSize.getWidth()
   let pageHeight = doc.internal.pageSize.getHeight()
   let contentWidth = pageWidth - PAGE_MARGIN * 2
   let y = PAGE_MARGIN
 
   const color = (rgb: Rgb) => doc.setTextColor(rgb[0], rgb[1], rgb[2])
-  const newPage = (orientation: 'portrait' | 'landscape' = 'portrait') => {
+  const newPage = (orientation: 'portrait' | 'landscape' = options.orientation ?? 'portrait') => {
     doc.addPage('a4', orientation)
     pageWidth = doc.internal.pageSize.getWidth()
     pageHeight = doc.internal.pageSize.getHeight()

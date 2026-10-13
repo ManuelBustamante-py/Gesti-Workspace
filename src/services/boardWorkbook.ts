@@ -134,7 +134,7 @@ function dateCell(value: string | null): CellValue {
   return value ? { t: 'n', v: dateKeyToExcelSerial(value), z: 'dd-mm-yyyy' } : ''
 }
 
-function fileSafeName(name: string) {
+export function fileSafeName(name: string) {
   return name.replace(/[^\w\s-áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'tablero'
 }
 

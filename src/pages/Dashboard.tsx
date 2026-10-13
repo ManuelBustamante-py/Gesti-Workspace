@@ -3,8 +3,10 @@ import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
+import { BellOff, ChartArea, ChartGantt, FileSpreadsheet, FileText, Mail, Pencil, Sheet, Users, X } from 'lucide-react'
 
 import { supabase } from '../lib/supabase'
+import { downloadBoardReport } from '../lib/boardReport'
 import { useAuth } from '../context/AuthContext'
 import { useBoardData } from '../hooks/useBoardData'
 import { useTaskDragAndDrop } from '../hooks/useTaskDragAndDrop'
@@ -61,6 +63,7 @@ import {
   downloadBoardTemplate,
   exportBoardGanttWorkbook,
   exportBoardWorkbook,
+  fileSafeName,
   readBoardWorkbook,
 } from '../services/boardWorkbook'
 import {
@@ -123,6 +126,7 @@ function Dashboard() {
   const [collaboratorsOpen, setCollaboratorsOpen] = useState(false)
   const [securityOpen, setSecurityOpen] = useState(false)
   const [messagesOpen, setMessagesOpen] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
 
   const [newBoard, setNewBoard] = useState({ name: '', description: '', color: '#6366f1' })
@@ -1132,25 +1136,62 @@ function Dashboard() {
                     {roleEmotes[role]} {roleLabels[role]}
                   </span>
                 </div>
-                <div className="board-toolbar">
-                  <Link to={`/dashboard/gantt/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Diagrama Gantt</Link>
-                  <Link to={`/dashboard/flujo/${selectedBoard.id}`} className="btn-ghost px-3 py-1.5 text-sm">Flujo (CFD)</Link>
-                  {messages.supported && (
-                    <button type="button" onClick={() => setMessagesOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">
-                      ✉ Mensajes
-                      {!selectedMessageInfo?.muted && (selectedMessageInfo?.unread ?? 0) > 0 && (
-                        <span className="nav-badge ml-1.5">{selectedMessageInfo?.unread}</span>
-                      )}
-                      {selectedMessageInfo?.muted && <span className="ml-1" aria-label="Silenciado">🔕</span>}
+                <div className="board-toolbar" role="toolbar" aria-label="Acciones del tablero">
+                  <div className="toolbar-group" role="group" aria-label="Vistas">
+                    <Link to={`/dashboard/gantt/${selectedBoard.id}`} className="toolbar-btn" data-tone="gantt" title="Abrir el diagrama de Gantt">
+                      <ChartGantt aria-hidden="true" /> Gantt
+                    </Link>
+                    <Link to={`/dashboard/flujo/${selectedBoard.id}`} className="toolbar-btn" data-tone="flow" title="Abrir el diagrama de flujo acumulado">
+                      <ChartArea aria-hidden="true" /> Flujo (CFD)
+                    </Link>
+                  </div>
+                  <div className="toolbar-group" role="group" aria-label="Exportar">
+                    <button
+                      type="button"
+                      disabled={exportingPdf}
+                      onClick={() => {
+                        setExportingPdf(true)
+                        void withBoardContent(selectedBoard, (cols, tasks, names) =>
+                          downloadBoardReport({ board: selectedBoard, columns: cols, tasksByColumn: tasks, assigneeNames: names }, `${fileSafeName(selectedBoard.name)}.pdf`),
+                        ).finally(() => setExportingPdf(false))
+                      }}
+                      className="toolbar-btn"
+                      data-tone="pdf"
+                      title="Descargar un informe PDF del tablero"
+                    >
+                      <FileText aria-hidden="true" /> {exportingPdf ? 'Generando…' : 'PDF'}
                     </button>
-                  )}
-                  <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks) => exportBoardWorkbook(selectedBoard, cols, tasks))} className="btn-ghost px-3 py-1.5 text-sm">XLSX</button>
-                  <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks, names) => exportBoardGanttWorkbook(selectedBoard, cols, tasks, names))} className="btn-ghost px-3 py-1.5 text-sm">Gantt XLSX</button>
-                  <button type="button" onClick={() => setCollaboratorsOpen(true)} className="btn-ghost px-3 py-1.5 text-sm">Colaboradores</button>
-                  {canManageBoard && (
-                    <button type="button" onClick={() => setEditingBoard(selectedBoard)} className="btn-ghost px-3 py-1.5 text-sm">Editar</button>
-                  )}
-                  <button type="button" onClick={closeBoard} className="btn-ghost px-3 py-1.5 text-sm">Cerrar</button>
+                    <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks) => exportBoardWorkbook(selectedBoard, cols, tasks))} className="toolbar-btn" data-tone="xlsx" title="Descargar las tareas en Excel (reimportable)">
+                      <FileSpreadsheet aria-hidden="true" /> XLSX
+                    </button>
+                    <button type="button" onClick={() => void withBoardContent(selectedBoard, (cols, tasks, names) => exportBoardGanttWorkbook(selectedBoard, cols, tasks, names))} className="toolbar-btn" data-tone="xlsx" title="Descargar el Gantt en Excel">
+                      <Sheet aria-hidden="true" /> Gantt XLSX
+                    </button>
+                  </div>
+                  <div className="toolbar-group" role="group" aria-label="Equipo">
+                    {messages.supported && (
+                      <button type="button" onClick={() => setMessagesOpen(true)} className="toolbar-btn" title="Mensajes del tablero">
+                        <Mail aria-hidden="true" /> Mensajes
+                        {!selectedMessageInfo?.muted && (selectedMessageInfo?.unread ?? 0) > 0 && (
+                          <span className="nav-badge">{selectedMessageInfo?.unread}</span>
+                        )}
+                        {selectedMessageInfo?.muted && <BellOff aria-label="Silenciado" />}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setCollaboratorsOpen(true)} className="toolbar-btn" title="Gestionar colaboradores">
+                      <Users aria-hidden="true" /> Colaboradores
+                    </button>
+                  </div>
+                  <div className="toolbar-group" role="group" aria-label="Tablero">
+                    {canManageBoard && (
+                      <button type="button" onClick={() => setEditingBoard(selectedBoard)} className="toolbar-btn" title="Editar el tablero">
+                        <Pencil aria-hidden="true" /> Editar
+                      </button>
+                    )}
+                    <button type="button" onClick={closeBoard} className="toolbar-btn toolbar-btn-icon" title="Cerrar el tablero" aria-label="Cerrar el tablero">
+                      <X aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -852,7 +852,43 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.board-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.board-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+
+/* Grupos segmentados: vistas, exportar, equipo y gestión del tablero. */
+.toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.375rem 0.7rem;
+  border-radius: 0.5rem;
+  color: var(--text-main);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.toolbar-btn svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-muted); transition: color 160ms ease; }
+.toolbar-btn[data-tone="gantt"] svg { color: var(--status-progress); }
+.toolbar-btn[data-tone="flow"] svg { color: var(--status-todo); }
+.toolbar-btn[data-tone="pdf"] svg { color: var(--priority-high); }
+.toolbar-btn[data-tone="xlsx"] svg { color: var(--status-done); }
+.toolbar-btn:hover:not(:disabled) { background: rgba(166, 180, 184, 0.1); color: #fff; }
+.toolbar-btn:not([data-tone]):hover:not(:disabled) svg { color: var(--accent-ui); }
+.toolbar-btn:focus-visible { outline: 2px solid var(--accent-mint); outline-offset: 1px; }
+.toolbar-btn:disabled { opacity: 0.6; cursor: progress; }
+.toolbar-btn-icon { padding: 0.375rem 0.5rem; }
+.toolbar-btn-icon:hover:not(:disabled) { background: rgba(217, 120, 120, 0.12); color: var(--priority-high); }
+.toolbar-btn-icon:hover:not(:disabled) svg { color: var(--priority-high); }
 
 /* ---- Estadísticas ---- */
 .stats-panel {
@@ -982,7 +1018,7 @@ a:focus-visible {
 
   .stat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .board-toolbar { width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 0.25rem; }
+  .board-toolbar { width: 100%; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; padding-bottom: 0.25rem; }
   .board-toolbar > * { flex-shrink: 0; }
 
   /* Objetivos táctiles de al menos 40px en las acciones de tarjeta. */
