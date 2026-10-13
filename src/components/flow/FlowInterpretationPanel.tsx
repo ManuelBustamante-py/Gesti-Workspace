@@ -8,14 +8,22 @@ const number = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
 const shortDate = (day: string) => formatDateKey(day, { day: 'numeric', month: 'short', year: 'numeric' })
 
 /** Interpretación del avance: diagnóstico, hallazgos, escenarios de entrega y recomendaciones. */
-function FlowInterpretationPanel({ interpretation, unit }: { interpretation: FlowInterpretation; unit: string }) {
-  const { tone, headline, summary, insights, scenarios, recommendations } = interpretation
+function FlowInterpretationPanel({ interpretation, unit, unitLong }: { interpretation: FlowInterpretation; unit: string; unitLong: string }) {
+  const { view, tone, headline, summary, insights, scenarios, metrics, recommendations } = interpretation
+  const viewName = view === 'burndown' ? 'del burndown' : 'del flujo acumulado'
 
   return (
     <section className="glass-panel mt-4 overflow-hidden rounded-2xl" aria-labelledby="flow-interpretation-title">
       <div className="border-b border-white/10 px-4 py-4 sm:px-5">
-        <h2 id="flow-interpretation-title" className="text-lg font-semibold text-white">Interpretación</h2>
-        <p className="mt-1 text-sm text-slate-400">Lectura automática de las cifras del tablero. Cada conclusión sale de un dato que puedes verificar en los gráficos o la tabla.</p>
+        <h2 id="flow-interpretation-title" className="text-lg font-semibold text-white">
+          Interpretación {viewName} <span className="font-normal text-[var(--text-muted)]">· en {unitLong}</span>
+        </h2>
+        <p className="mt-1 text-sm text-slate-400">
+          {view === 'burndown'
+            ? 'Lectura del avance frente al plan: línea ideal, plazo, ritmo necesario y escenarios de entrega.'
+            : 'Lectura de cómo entra, avanza y sale el trabajo: trabajo en curso, acumulación y tiempo de ciclo.'}
+          {' '}Cambia la vista o la unidad y la interpretación se recalcula. Cada conclusión sale de un dato verificable en el gráfico o la tabla.
+        </p>
       </div>
 
       <div className="space-y-5 px-4 py-4 sm:px-5">
@@ -69,6 +77,29 @@ function FlowInterpretationPanel({ interpretation, unit }: { interpretation: Flo
                           ? <span className="burndown-ahead">✓ Cumple</span>
                           : <span className="burndown-behind">✗ No cumple</span>}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {metrics.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Indicadores del flujo</h3>
+            <div className="overflow-x-auto">
+              <table className="flow-table flow-scenarios">
+                <caption className="sr-only">Indicadores del flujo acumulado</caption>
+                <thead>
+                  <tr><th scope="col">Indicador</th><th scope="col">Valor</th><th scope="col" className="text-left">Lectura</th></tr>
+                </thead>
+                <tbody>
+                  {metrics.map((metric) => (
+                    <tr key={metric.label}>
+                      <th scope="row">{metric.label}</th>
+                      <td className={metric.tone === 'danger' || metric.tone === 'warning' ? 'burndown-behind' : ''}>{metric.value}</td>
+                      <td className="flow-metric-note">{metric.note}</td>
                     </tr>
                   ))}
                 </tbody>

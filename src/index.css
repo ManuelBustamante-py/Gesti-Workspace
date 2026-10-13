@@ -1890,6 +1890,7 @@ a:focus-visible {
 .flow-insight-danger { border-left-color: #e0607a; background: rgba(224, 96, 122, 0.06); }
 .flow-insight-danger .flow-insight-icon { color: #f3a3b3; }
 .flow-scenarios th[scope='row'] { padding-top: 0.6rem; padding-bottom: 0.6rem; }
+.flow-metric-note { color: var(--text-muted); font-size: 0.8rem; text-align: left !important; }
 .flow-recommendations { display: grid; gap: 0.45rem; padding-left: 1.25rem; color: var(--text-main); font-size: 0.875rem; list-style: decimal; }
 .flow-recommendations li::marker { color: var(--text-muted); font-weight: 600; }
 @media (max-width: 899px) {

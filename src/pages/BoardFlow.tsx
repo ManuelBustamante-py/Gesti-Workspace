@@ -12,7 +12,6 @@ import {
   anchorInitialScope,
   applyStatusDates,
   buildDailyFlow,
-  computeForecast,
   flowLabels,
   ganttDeadline,
   initialScopeTasks,
@@ -22,19 +21,16 @@ import {
   type StatusDate,
   type StatusEvent,
 } from '../domain/cfd'
-import { buildBurndown, burndownStart, type Burndown } from '../domain/burndown'
 import { resolveColumnStatus } from '../domain/columnStatus'
 import { formatDateKey, localDateToKey, todayKey, weekdayNumber } from '../domain/dates'
 import { effortWeights, taskEffort } from '../domain/effort'
-import { interpretFlow, type PendingTask } from '../domain/flowInsights'
+import { analyzeFlow, type PendingTaskBase } from '../domain/flowAnalysis'
 import { activityNumbers } from '../domain/numbering'
 import { boardWorkingDays } from '../domain/workSchedule'
 import { getBoard, type Board } from '../services/boards'
 import { getBoardStatusEvents } from '../services/flowHistory'
 import type { FlowReportPendingTask } from '../lib/flowReport'
 
-/** Historial máximo mostrado: 26 semanas. */
-const MAX_HISTORY_DAYS = 182
 
 /** Unidad en que se mide el trabajo: puntos de esfuerzo o cantidad de tareas. */
 type FlowUnit = 'points' | 'tasks'
@@ -111,7 +107,7 @@ function BoardFlow() {
   const [view, setView] = useState<FlowView>('burndown')
   // null: se elige sola (puntos si hay alguna tarea estimada).
   const [unitChoice, setUnitChoice] = useState<FlowUnit | null>(null)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<'pdf' | 'html' | null>(null)
 
   useEffect(() => {
     if (!boardId || !user) return
@@ -202,56 +198,60 @@ function BoardFlow() {
     [datedEvents, today, effort],
   )
   const tasksSeries = useMemo(() => buildDailyFlow(datedEvents, today), [datedEvents, today])
-  const allPoints = unit === 'points' && pointsSeries ? pointsSeries : tasksSeries
-  const otherPoints = unit === 'points' ? tasksSeries : pointsSeries
-  const forecast = useMemo(() => computeForecast(allPoints, deadline), [allPoints, deadline])
-  const otherForecast = useMemo(() => (otherPoints ? computeForecast(otherPoints, deadline) : null), [otherPoints, deadline])
-  const points = useMemo(() => allPoints.slice(-MAX_HISTORY_DAYS), [allPoints])
   const workingDays = boardWorkingDays(board)
-  const burndown = useMemo<Burndown | null>(() => {
-    const start = burndownStart(points, board?.start_date)
-    return start ? buildBurndown(points, { start, deadline, workingDays }) : null
-  }, [points, board?.start_date, deadline, workingDays])
   const numbers = useMemo(() => activityNumbers(columns, tasksByColumn), [columns, tasksByColumn])
-  const pending = useMemo<PendingTask[]>(
+  const pendingBase = useMemo<PendingTaskBase[]>(
     () =>
       columns.flatMap((column) => {
         const status = resolveColumnStatus(column)
         if (status === 'done') return []
         return (tasksByColumn[column.id] ?? []).map((task) => ({
+          id: task.id,
           number: numbers.get(task.id) ?? null,
           title: task.title,
-          weight: unit === 'points' ? effort.weights.get(task.id) ?? effort.fallback : 1,
           status,
           endDate: task.end_date,
         }))
       }),
-    [columns, tasksByColumn, numbers, unit, effort],
+    [columns, tasksByColumn, numbers],
   )
-  const interpretation = useMemo(
-    () =>
-      forecast
-        ? interpretFlow({
-          unit: UNIT_LABELS[unit],
-          points: allPoints,
-          forecast,
-          burndown,
-          committed,
-          pending,
-          effort: unit === 'points' ? effort : undefined,
-          alternate: otherForecast ? { label: unit === 'points' ? 'tareas' : 'puntos', projectedFinish: otherForecast.projectedFinish } : undefined,
-        })
-        : null,
-    [unit, allPoints, forecast, burndown, committed, pending, effort, otherForecast],
-  )
+  // Análisis completo en cada unidad: la elegida se muestra; la otra sirve para
+  // contrastar y para el informe interactivo, que permite alternarlas.
+  const analyses = useMemo(() => {
+    const common = { deadline, projectStart, workingDays, committed, pending: pendingBase }
+    const byPoints = pointsSeries
+      ? analyzeFlow({
+        ...common,
+        unit: UNIT_LABELS.points,
+        allPoints: pointsSeries,
+        other: { label: 'tareas', allPoints: tasksSeries },
+        weightOf: (taskId) => effort.weights.get(taskId) ?? effort.fallback,
+        effort,
+      })
+      : null
+    const byTasks = analyzeFlow({
+      ...common,
+      unit: UNIT_LABELS.tasks,
+      allPoints: tasksSeries,
+      other: pointsSeries ? { label: 'puntos', allPoints: pointsSeries } : null,
+      weightOf: () => 1,
+    })
+    return { points: byPoints, tasks: byTasks }
+  }, [deadline, projectStart, workingDays, committed, pendingBase, pointsSeries, tasksSeries, effort])
+  const analysis = (unit === 'points' ? analyses.points : null) ?? analyses.tasks
+  const forecast = analysis?.forecast ?? null
+  const points = useMemo(() => analysis?.points ?? [], [analysis])
+  const burndown = analysis?.burndown ?? null
+  const interpretation = analysis ? analysis.interpretations[view] : null
   const weeklyRows = useMemo(
     () => points.filter((point, index) => weekdayNumber(point.day) === 2 || index === points.length - 1).reverse(),
     [points],
   )
 
-  async function handleDownloadReport() {
-    if (!board || !forecast || !interpretation) return
-    setExporting(true)
+  /** Datos comunes de los informes; el generador elegido se carga solo al descargar. */
+  async function handleDownloadReport(format: 'pdf' | 'html') {
+    if (!board || !analysis) return
+    setExporting(format)
     try {
       const metadata = user?.user_metadata as { full_name?: string; name?: string } | undefined
       const reportPending: FlowReportPendingTask[] = columns.flatMap((column) => {
@@ -266,27 +266,30 @@ function BoardFlow() {
           endDate: task.end_date,
         }))
       })
-      // El generador (y jsPDF) se cargan solo al descargar.
-      const { downloadFlowReport } = await import('../lib/flowReport')
-      await downloadFlowReport({
+      const common = {
         board: { name: board.name, description: board.description },
         author: metadata?.full_name || metadata?.name || user?.email?.split('@')[0] || '',
-        unit: UNIT_LABELS[unit],
-        measuredInPoints: unit === 'points',
-        points,
-        forecast,
-        burndown,
-        interpretation,
         deadlineName: committed ? 'Fin comprometido' : 'Fin planificado (Gantt)',
         workingDays,
         effort,
         pending: reportPending,
         confirmedCount,
-      })
+      }
+      if (format === 'pdf') {
+        const { downloadFlowReport } = await import('../lib/flowReport')
+        await downloadFlowReport({ ...common, analysis, measuredInPoints: analysis.unit.short === 'pts' })
+      } else if (analyses.tasks) {
+        const { downloadFlowReportHtml } = await import('../lib/flowReportHtml')
+        downloadFlowReportHtml({
+          ...common,
+          analyses: { points: analyses.points, tasks: analyses.tasks },
+          defaultUnit: analysis.unit.short === 'pts' ? 'points' : 'tasks',
+        })
+      }
     } catch (err) {
       window.alert(err instanceof Error ? `No se pudo generar el informe: ${err.message}` : 'No se pudo generar el informe.')
     } finally {
-      setExporting(false)
+      setExporting(null)
     }
   }
 
@@ -324,10 +327,21 @@ function BoardFlow() {
             <p className="mt-2 text-sm text-slate-400">Burndown y flujo acumulado (CFD) con proyección de entrega</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {forecast && interpretation && (
-              <button type="button" onClick={() => void handleDownloadReport()} disabled={exporting} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
-                {exporting ? 'Generando informe…' : 'Descargar informe PDF'}
-              </button>
+            {analysis && (
+              <>
+                <button type="button" onClick={() => void handleDownloadReport('pdf')} disabled={exporting !== null} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+                  {exporting === 'pdf' ? 'Generando PDF…' : 'Descargar informe PDF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadReport('html')}
+                  disabled={exporting !== null}
+                  className="btn-ghost px-4 py-2 text-sm"
+                  title="Archivo HTML con gráficos interactivos: se abre en cualquier navegador y permite alternar puntos y tareas"
+                >
+                  {exporting === 'html' ? 'Generando…' : 'Informe interactivo (HTML)'}
+                </button>
+              </>
             )}
             <Link to={`/dashboard/gantt/${board.id}`} className="btn-ghost px-4 py-2 text-sm">Diagrama Gantt</Link>
           </div>
@@ -552,7 +566,7 @@ function BoardFlow() {
               </p>
             </section>
 
-            {interpretation && <FlowInterpretationPanel interpretation={interpretation} unit={unitLabel.short} />}
+            {interpretation && <FlowInterpretationPanel interpretation={interpretation} unit={unitLabel.short} unitLong={unitLabel.long} />}
           </>
         )}
       </div>
