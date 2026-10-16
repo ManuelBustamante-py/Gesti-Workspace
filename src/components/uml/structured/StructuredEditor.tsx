@@ -21,7 +21,7 @@ import { downloadDiagramReport } from '../../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
 import { applyPatch } from '../../../domain/uml/liveSync'
 import type { LiveConnection } from '../live'
-import { confirmAction } from '../../ui/ConfirmDialog'
+import { confirmAction } from '../../ui/confirmAction'
 
 interface StructuredEditorProps {
   diagram: Diagram

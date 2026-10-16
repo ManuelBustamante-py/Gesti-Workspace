@@ -1,49 +1,16 @@
 import { useEffect, useState } from 'react'
 
 import Modal from './Modal'
-
-interface ConfirmOptions {
-  title?: string
-  confirmLabel?: string
-  /** Acción destructiva: el botón de confirmar se muestra en rojo. */
-  danger?: boolean
-}
-
-type Request = ConfirmOptions & { message: string; resolve: (value: boolean) => void }
-
-let pending: Request | null = null
-const listeners = new Set<(request: Request | null) => void>()
-
-function publish(request: Request | null) {
-  pending = request
-  for (const listener of listeners) listener(request)
-}
-
-/**
- * Sustituye a window.confirm. El diálogo nativo deja de mostrarse (y devuelve
- * false sin preguntar) si el usuario marca «no permitir más diálogos» en el
- * navegador; este diálogo es de la app y siempre aparece.
- */
-export function confirmAction(message: string, options: ConfirmOptions = {}): Promise<boolean> {
-  // Sin diálogo montado (p. ej. en pruebas) se conserva el comportamiento nativo.
-  if (!listeners.size) return Promise.resolve(window.confirm(message))
-  pending?.resolve(false)
-  return new Promise((resolve) => publish({ ...options, message, resolve }))
-}
+import { pendingConfirm, publishConfirm, subscribeConfirm, type ConfirmRequest } from './confirmAction'
 
 /** Monta una sola vez, en la raíz de la app. */
 export function ConfirmHost() {
-  const [request, setRequest] = useState<Request | null>(pending)
-  useEffect(() => {
-    listeners.add(setRequest)
-    return () => {
-      listeners.delete(setRequest)
-    }
-  }, [])
+  const [request, setRequest] = useState<ConfirmRequest | null>(pendingConfirm)
+  useEffect(() => subscribeConfirm(setRequest), [])
   if (!request) return null
   const answer = (value: boolean) => {
     request.resolve(value)
-    publish(null)
+    publishConfirm(null)
   }
   return (
     <Modal

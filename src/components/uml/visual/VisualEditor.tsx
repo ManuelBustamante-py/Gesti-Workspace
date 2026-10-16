@@ -28,7 +28,7 @@ import type { LiveConnection } from '../live'
 import { canvasToSvg, downloadPlantUml, downloadPng, downloadSvg } from '../../../lib/diagramExport'
 import { downloadDiagramReport } from '../../../lib/diagramReport'
 import { deleteDiagram, updateDiagram, type Diagram } from '../../../services/diagrams'
-import { confirmAction } from '../../ui/ConfirmDialog'
+import { confirmAction } from '../../ui/confirmAction'
 
 interface VisualEditorProps {
   diagram: Diagram

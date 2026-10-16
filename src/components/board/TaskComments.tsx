@@ -14,7 +14,7 @@ import {
   type CommentKind,
   type TaskComment,
 } from '../../services/taskComments'
-import { confirmAction } from '../ui/ConfirmDialog'
+import { confirmAction } from '../ui/confirmAction'
 
 interface TaskCommentsProps {
   boardId: string

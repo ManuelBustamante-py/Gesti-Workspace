@@ -21,7 +21,7 @@ import {
   reverseEdge,
 } from './modelOps'
 import { emptyModel, type GraphModel, type SequenceModel } from './visualModel'
-import { parallelOffsets } from '../../components/uml/visual/shapes'
+import { parallelOffsets } from '../../components/uml/visual/canvasGeometry'
 
 const usecase = () => initialModel('usecase', true) as GraphModel
 const sequence = () => initialModel('sequence', true) as SequenceModel

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from 'react'
 
-import { COLORS, EdgeShape, MarkerDefs, NodeShape, edgePath, parallelOffsets } from './shapes'
+import { COLORS, edgePath, parallelOffsets } from './canvasGeometry'
+import { EdgeShape, MarkerDefs, NodeShape } from './shapes'
 import { center, contentBounds, nodeRect, snap, type Point } from '../../../domain/uml/geometry'
 import { addBend, addEdge, bendsWithin, deleteEdge, deleteNode, descendantsOf, moveBend, moveNodes, removeBend, updateNode } from '../../../domain/uml/modelOps'
 import { isContainer, type GraphModel } from '../../../domain/uml/visualModel'

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import AssigneeAvatars from '../components/board/AssigneeAvatars'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { useElementWidth, useIsNarrow } from '../hooks/useLayout'
 import { useBoardData } from '../hooks/useBoardData'
 import { columnStatusLabels, columnStatusProgress, resolveColumnStatus } from '../domain/columnStatus'

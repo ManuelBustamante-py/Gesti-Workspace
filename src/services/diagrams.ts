@@ -78,6 +78,26 @@ export async function createDiagram(
 }
 
 /**
+ * Crea varios diagramas de una vez (importación de plantilla). Es una sola
+ * inserción: o se crean todos o ninguno.
+ */
+export async function createDiagrams(
+  boardId: string,
+  items: Array<{ name: string; kind: string; mode: DiagramMode; source: string; model?: unknown }>,
+) {
+  if (items.length === 0) return [] as Diagram[]
+  const rows = items.map((item) => {
+    const name = item.name.trim()
+    if (!name) throw new Error('Todos los diagramas deben tener un nombre.')
+    return { board_id: boardId, name, kind: item.kind, mode: item.mode, source: item.source, model: item.model ?? null }
+  })
+  const { data, error } = await supabase.from('board_diagrams').insert(rows).select()
+  if (error) throw translateError(error)
+  if (!data || data.length === 0) throw new Error(NO_PERMISSION_MESSAGE)
+  return data as Diagram[]
+}
+
+/**
  * Guarda cambios solo si nadie más guardó desde `expectedUpdatedAt`
  * (concurrencia optimista): así no se pisan los cambios de otro colaborador.
  */

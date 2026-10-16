@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { confirmAction } from './ConfirmDialog'
+import { confirmAction } from './confirmAction'
 
 describe('confirmAction', () => {
   afterEach(() => vi.unstubAllGlobals())

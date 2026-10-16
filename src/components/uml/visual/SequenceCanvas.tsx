@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from 'react'
 
-import { COLORS, FONT } from './shapes'
+import { COLORS, FONT } from './canvasGeometry'
 import type { Selection } from './GraphCanvas'
 import { addMessage, deleteParticipant, moveMessage, moveParticipant } from '../../../domain/uml/modelOps'
 import type { MessageType, Participant, ParticipantType, SequenceModel } from '../../../domain/uml/visualModel'

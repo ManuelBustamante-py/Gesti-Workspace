@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Download, Upload } from 'lucide-react'
 
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { useIsNarrow } from '../hooks/useLayout'
 import CoherencePanel from '../components/uml/coherence/CoherencePanel'
 import DiagramEditor from '../components/uml/DiagramEditor'
@@ -11,6 +12,8 @@ import type { Selection } from '../components/uml/visual/GraphCanvas'
 import { useDiagramLive } from '../hooks/useDiagramLive'
 import { isStructuredKind } from '../domain/uml/structured'
 import NewDiagramModal, { type NewDiagramValues } from '../components/uml/NewDiagramModal'
+import ExportDiagramsModal from '../components/uml/ExportDiagramsModal'
+import ImportDiagramsModal from '../components/uml/ImportDiagramsModal'
 import { boardPermissions, resolveBoardRole } from '../domain/roles'
 import { UML_CATEGORIES, umlDiagramType } from '../domain/umlCatalog'
 import { preloadPlantUml } from '../lib/plantuml'
@@ -83,6 +86,9 @@ function BoardDiagrams() {
   const [current, setCurrent] = useState<Diagram | null>(null)
   const [currentError, setCurrentError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [notice, setNotice] = useState<{ text: string; warnings: string[] } | null>(null)
 
   // El motor pesa varios MB: se empieza a descargar apenas se entra a la sección.
   useEffect(() => {
@@ -157,6 +163,12 @@ function BoardDiagrams() {
     }
   }
 
+  function handleImported(created: Diagram[], warnings: string[]) {
+    setImporting(false)
+    setNotice({ text: `Se importaron ${created.length} diagrama${created.length === 1 ? '' : 's'}.`, warnings })
+    void refreshList()
+  }
+
   if (loadingBoard) {
     return <main className="min-h-screen bg-[var(--bg-main)] p-6 text-slate-400">Cargando diagramas…</main>
   }
@@ -185,10 +197,24 @@ function BoardDiagrams() {
             </div>
             <p className="mt-2 text-sm text-slate-400">Diagramas UML, de arquitectura y de procesos del proyecto</p>
           </div>
-          {!diagramId && canEditContent && view === 'gallery' && (
-            <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
-              ＋ Añadir diagrama
-            </button>
+          {!diagramId && view === 'gallery' && (canEditContent || diagrams.length > 0) && (
+            <div className="uml-header-actions">
+              {canEditContent && (
+                <button type="button" onClick={() => setImporting(true)} className="btn-ghost px-4 py-2 text-sm" title="Crear diagramas desde una plantilla (.json) o código PlantUML (.puml)">
+                  <Upload aria-hidden="true" /> Importar
+                </button>
+              )}
+              {diagrams.length > 0 && (
+                <button type="button" onClick={() => setExporting(true)} className="btn-ghost px-4 py-2 text-sm" title="Descargar los diagramas como plantilla reutilizable">
+                  <Download aria-hidden="true" /> Exportar
+                </button>
+              )}
+              {canEditContent && (
+                <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+                  ＋ Añadir diagrama
+                </button>
+              )}
+            </div>
           )}
         </header>
 
@@ -234,6 +260,19 @@ function BoardDiagrams() {
             ) : (
               <section aria-label="Diagramas del tablero">
                 {listError && <p className="alert-error mb-4 rounded-lg p-3 text-sm" role="alert">{listError}</p>}
+                {notice && (
+                  <div className={`${notice.warnings.length > 0 ? 'alert-warning' : 'status-success'} mb-4 rounded-lg p-3 text-sm`} role="status">
+                    <div className="flex items-start justify-between gap-3">
+                      <span>{notice.text}</span>
+                      <button type="button" onClick={() => setNotice(null)} aria-label="Cerrar aviso">✕</button>
+                    </div>
+                    {notice.warnings.length > 0 && (
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {notice.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 {loadingList ? (
                   <p className="text-slate-400">Cargando diagramas…</p>
                 ) : diagrams.length === 0 ? (
@@ -245,9 +284,14 @@ function BoardDiagrams() {
                       Se dibujan con PlantUML directamente en tu navegador.
                     </p>
                     {canEditContent ? (
-                      <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary mt-5 px-4 py-2 text-sm font-semibold">
-                        ＋ Añadir el primer diagrama
-                      </button>
+                      <div className="mt-5 flex flex-wrap justify-center gap-2">
+                        <button type="button" onClick={() => setCreating(true)} className="btn-mint-primary px-4 py-2 text-sm font-semibold">
+                          ＋ Añadir el primer diagrama
+                        </button>
+                        <button type="button" onClick={() => setImporting(true)} className="btn-ghost px-4 py-2 text-sm">
+                          ⇪ Importar plantilla
+                        </button>
+                      </div>
                     ) : (
                       <p className="mt-4 text-sm text-slate-500">Tu rol es de lector: el propietario o un editor puede crearlos.</p>
                     )}
@@ -282,6 +326,25 @@ function BoardDiagrams() {
       </div>
 
       {creating && <NewDiagramModal onCreate={handleCreate} onClose={() => setCreating(false)} />}
+      {importing && (
+        <ImportDiagramsModal
+          boardId={board.id}
+          existingNames={diagrams.map((diagram) => diagram.name)}
+          onClose={() => setImporting(false)}
+          onImported={handleImported}
+        />
+      )}
+      {exporting && (
+        <ExportDiagramsModal
+          board={board}
+          diagrams={diagrams}
+          onClose={() => setExporting(false)}
+          onExported={(count) => {
+            setExporting(false)
+            setNotice({ text: `Se descargó la plantilla con ${count} diagrama${count === 1 ? '' : 's'}.`, warnings: [] })
+          }}
+        />
+      )}
     </main>
   )
 }

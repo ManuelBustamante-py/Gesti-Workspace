@@ -48,6 +48,8 @@ pendiente, en progreso o terminado.
 - Importa tableros, columnas y tareas desde una planilla.
 - Exporta tus proyectos para compartirlos, respaldarlos o analizarlos.
 - Conserva prioridades, fechas y estados al trabajar con tus datos.
+- Exporta los diagramas de un tablero como plantilla (`.diagramas.json`) e
+  impórtalos en otro proyecto, o importa directamente código PlantUML (`.puml`).
 
 ### Cuenta y seguridad
 
@@ -127,6 +129,13 @@ con sus columnas y tareas.
 
 También puedes exportar un tablero en cualquier momento para conservar una copia
 o trabajar con la información fuera de la plataforma.
+
+En la sección **Diagramas** de cada tablero, **Exportar** descarga los
+diagramas elegidos (con su código y su diseño visual, y opcionalmente la
+configuración de coherencia arquitectónica) en una plantilla reutilizable.
+**Importar** recibe esa plantilla o un archivo PlantUML, muestra qué se va a
+crear y permite ajustar nombres y tipos antes de confirmar. Si partes desde
+cero, puedes descargar una plantilla de ejemplo desde el mismo diálogo.
 
 ### 7. Administra tu perfil
 

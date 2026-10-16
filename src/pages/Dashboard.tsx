@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent, ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { DndContext, DragOverlay, type Announcements } from '@dnd-kit/core'
@@ -7,7 +7,7 @@ import { BellOff, ChartArea, ChartGantt, FileSpreadsheet, FileText, Mail, Pencil
 
 import { supabase } from '../lib/supabase'
 import { downloadBoardReport } from '../lib/boardReport'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { useBoardData } from '../hooks/useBoardData'
 import { useTaskDragAndDrop } from '../hooks/useTaskDragAndDrop'
 import { useMessageNotifications, type MessageToast } from '../hooks/useMessageNotifications'
@@ -16,6 +16,8 @@ import TaskDetailDialog from '../components/board/TaskDetailDialog'
 import BoardScheduleForm from '../components/dashboard/BoardScheduleForm'
 import BoardStats from '../components/dashboard/BoardStats'
 import CollaboratorsModal from '../components/dashboard/CollaboratorsModal'
+import CreateBoardPanel, { type NewBoardValues } from '../components/dashboard/CreateBoardPanel'
+import InvitationRequests from '../components/dashboard/InvitationRequests'
 import BoardSummaryMini from '../components/dashboard/BoardSummaryMini'
 import EditBoardModal, { type EditBoardValues } from '../components/dashboard/EditBoardModal'
 import MessagesPanel from '../components/dashboard/MessagesPanel'
@@ -76,7 +78,7 @@ import {
 import { getProfile, syncProfileFromAuthUser, type Profile } from '../services/profiles'
 import { getBoardTaskAssignees, setTaskAssignees, type TaskAssignments } from '../services/taskAssignees'
 import { createTask, deleteTask, moveTask, setTaskStatusDate, updateTask, type Task, type TaskInput, type TaskStatusDateField } from '../services/tasks'
-import { confirmAction } from '../components/ui/ConfirmDialog'
+import { confirmAction } from '../components/ui/confirmAction'
 
 type View = 'boards' | 'create' | 'requests'
 type OpenTask = { id: string; mode: 'view' | 'edit' }
@@ -129,7 +131,6 @@ function Dashboard() {
   const [exportingPdf, setExportingPdf] = useState(false)
   const [editingBoard, setEditingBoard] = useState<Board | null>(null)
 
-  const [newBoard, setNewBoard] = useState({ name: '', description: '', color: '#6366f1' })
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [importingBoard, setImportingBoard] = useState(false)
   const [importWarnings, setImportWarnings] = useState<string[]>([])
@@ -413,31 +414,29 @@ function Dashboard() {
 
   // --- Tableros -------------------------------------------------------------
 
-  async function handleCreateBoard(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!user) return
-    if (!newBoard.name.trim()) {
+  async function handleCreateBoard(values: NewBoardValues) {
+    if (!user) return false
+    if (!values.name.trim()) {
       setError('El tablero debe tener un nombre.')
-      return
+      return false
     }
     try {
       setError('')
       setCreatingBoard(true)
-      const board = await createBoard(newBoard.name.trim(), newBoard.description.trim(), newBoard.color, user.id)
+      const board = await createBoard(values.name.trim(), values.description.trim(), values.color, user.id)
       setBoards((current) => prependUniqueById(current, board))
-      setNewBoard({ name: '', description: '', color: '#6366f1' })
       openBoard(board.id)
+      return true
     } catch (err) {
       setError(errorMessage(err, 'No se pudo crear el tablero.'))
+      return false
     } finally {
       setCreatingBoard(false)
     }
   }
 
-  async function handleImportBoard(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !user) return
+  async function handleImportBoard(file: File) {
+    if (!user) return
     try {
       setError('')
       setImportWarnings([])
@@ -984,82 +983,21 @@ function Dashboard() {
           )}
 
           {activeView === 'create' && !selectedBoard && (
-            <section className="glass-panel mt-8 rounded-2xl p-5 sm:p-6">
-              <h2 className="text-xl font-semibold text-white">Crear tablero</h2>
-              <form onSubmit={handleCreateBoard} className="mt-5 space-y-4">
-                <label className="field-label">
-                  Nombre
-                  <input type="text" value={newBoard.name} onChange={(event) => setNewBoard({ ...newBoard, name: event.target.value })} required className="theme-input mt-1 w-full rounded-lg px-4 py-3" placeholder="Mi proyecto" />
-                </label>
-                <label className="field-label">
-                  Descripción
-                  <textarea value={newBoard.description} onChange={(event) => setNewBoard({ ...newBoard, description: event.target.value })} rows={3} className="theme-input mt-1 w-full resize-none rounded-lg px-4 py-3" placeholder="Descripción opcional..." />
-                </label>
-                <label className="field-label">
-                  Color
-                  <input type="color" value={newBoard.color} onChange={(event) => setNewBoard({ ...newBoard, color: event.target.value })} className="theme-input mt-1 block h-10 w-16 cursor-pointer rounded" />
-                </label>
-                <button type="submit" disabled={creatingBoard} className="btn-mint-primary w-full px-5 py-3 font-semibold disabled:opacity-50 sm:w-auto">
-                  {creatingBoard ? 'Creando...' : 'Crear tablero'}
-                </button>
-              </form>
-              <div className="mt-6 border-t border-white/5 pt-5">
-                <p className="text-sm text-[var(--text-muted)]">También puedes crear un tablero completo desde una plantilla Excel.</p>
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                  <button type="button" onClick={() => void downloadBoardTemplate().catch((err) => setError(errorMessage(err, 'No se pudo generar la plantilla.')))} className="btn-ghost px-4 py-2 text-sm">
-                    Descargar plantilla XLSX
-                  </button>
-                  <label className={`btn-action-secondary cursor-pointer border border-white/10 px-4 py-2 text-center text-sm ${importingBoard ? 'opacity-60' : ''}`}>
-                    {importingBoard ? 'Importando...' : 'Importar tablero XLSX'}
-                    <input type="file" accept=".xls,.xlsx" onChange={handleImportBoard} disabled={importingBoard} className="sr-only" />
-                  </label>
-                </div>
-                <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  Columnas: N° Tarea, Columna, Tarea, Descripción, Prioridad, Fecha inicio, Fecha fin y Predecesoras. La hoja «Instrucciones» explica cómo dar formato a descripciones largas. El archivo se valida completo antes de crear nada.
-                </p>
-              </div>
-            </section>
+            <CreateBoardPanel
+              creating={creatingBoard}
+              importing={importingBoard}
+              onCreate={handleCreateBoard}
+              onImport={(file) => void handleImportBoard(file)}
+              onDownloadTemplate={() => void downloadBoardTemplate().catch((err) => setError(errorMessage(err, 'No se pudo generar la plantilla.')))}
+            />
           )}
 
           {activeView === 'requests' && !selectedBoard && (
-            <section className="glass-panel mt-8 rounded-2xl p-5 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Solicitudes de colaboración</h2>
-                  <p className="mt-2 text-sm text-slate-400">Revisa las invitaciones recibidas para participar en otros tableros.</p>
-                </div>
-                <span className="rounded-full bg-[var(--accent-mint)]/10 px-3 py-1 text-xs text-[var(--accent-mint)]">
-                  {receivedInvitations.length} pendiente{receivedInvitations.length === 1 ? '' : 's'}
-                </span>
-              </div>
-              {receivedInvitations.length === 0 ? (
-                <p className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-400">No tienes solicitudes pendientes.</p>
-              ) : (
-                <ul className="mt-6 grid gap-3">
-                  {receivedInvitations.map((invitation) => (
-                    <li key={invitation.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="font-medium text-white">{invitation.board?.name ?? 'Tablero compartido'}</h3>
-                          <p className="mt-1 text-sm text-slate-400">
-                            Te invitaron como {roleEmotes[invitation.role]} {roleLabels[invitation.role].toLowerCase()}.
-                          </p>
-                        </div>
-                        <span className="text-xs text-slate-500">{new Date(invitation.created_at).toLocaleDateString('es-CL')}</span>
-                      </div>
-                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                        <button type="button" onClick={() => handleInvitationResponse(invitation.id, 'decline')} disabled={respondingInvitationId === invitation.id} className="btn-ghost px-4 py-2 text-sm disabled:opacity-50">
-                          Rechazar
-                        </button>
-                        <button type="button" onClick={() => handleInvitationResponse(invitation.id, 'accept')} disabled={respondingInvitationId === invitation.id} className="btn-mint-primary px-4 py-2 text-sm font-semibold disabled:opacity-50">
-                          {respondingInvitationId === invitation.id ? 'Guardando...' : 'Aceptar'}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <InvitationRequests
+              invitations={receivedInvitations}
+              respondingId={respondingInvitationId}
+              onRespond={(invitationId, response) => void handleInvitationResponse(invitationId, response)}
+            />
           )}
 
           {activeView === 'boards' && !selectedBoard && (
